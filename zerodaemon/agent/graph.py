@@ -1,0 +1,76 @@
+"""LangGraph StateGraph — the agent's brain, wired to the active model and SQLite memory."""
+
+from __future__ import annotations
+
+import logging
+from typing import Literal
+
+from langchain_core.messages import SystemMessage
+from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode
+from langgraph.checkpoint.sqlite import SqliteSaver
+
+from zerodaemon.agent.state import AgentState
+from zerodaemon.agent.tools import get_tools
+from zerodaemon.models.registry import ModelRegistry
+from zerodaemon.models import providers
+from zerodaemon.core.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+_SYSTEM_PROMPT = """\
+You are ZeroDaemon, an autonomous DevSecOps AI assistant.
+Your mission: monitor IP addresses, detect configuration drift, and identify security threats.
+
+When given an IP to analyse:
+1. Check the historical scan database to see what was open previously.
+2. Run a live service scan to discover current open ports and versions.
+3. Compare results — flag any new ports or changed service versions.
+4. Search for recent CVEs or exploit activity related to discovered services.
+5. Report findings clearly: what changed, what's risky, what to do next.
+
+Be concise, technical, and actionable. Think like a senior security engineer.
+"""
+
+
+def _should_continue(state: AgentState) -> Literal["tools", "__end__"]:
+    last = state["messages"][-1]
+    if getattr(last, "tool_calls", None):
+        return "tools"
+    return "__end__"
+
+
+def build_agent_node(llm_with_tools):
+    def agent_node(state: AgentState) -> dict:
+        messages = [SystemMessage(content=_SYSTEM_PROMPT)] + state["messages"]
+        response = llm_with_tools.invoke(messages)
+        return {"messages": [response]}
+    return agent_node
+
+
+def build_graph(registry: ModelRegistry) -> object:
+    """
+    Build and compile the LangGraph agent graph.
+
+    The active model is resolved at call time — switching via POST /models/{id}/activate
+    takes effect on the very next invocation with no restart required.
+    """
+    settings = get_settings()
+    tools = get_tools()
+
+    active = registry.get_active()
+    llm = providers.build_llm(active, settings)
+    llm_with_tools = llm.bind_tools(tools)
+
+    logger.info("Building agent graph with model: %s (%s)", active.id, active.provider)
+
+    builder = StateGraph(AgentState)
+    builder.add_node("agent", build_agent_node(llm_with_tools))
+    builder.add_node("tools", ToolNode(tools))
+
+    builder.add_edge(START, "agent")
+    builder.add_conditional_edges("agent", _should_continue, {"tools": "tools", "__end__": END})
+    builder.add_edge("tools", "agent")
+
+    checkpointer = SqliteSaver.from_conn_string(settings.db_path)
+    return builder.compile(checkpointer=checkpointer), active.id
