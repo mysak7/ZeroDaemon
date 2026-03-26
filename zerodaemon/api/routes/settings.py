@@ -21,6 +21,11 @@ class SettingsOut(BaseModel):
     daemon_poll_interval: int
     daemon_paused: bool
     ollama_base_url: str
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    google_api_key: str = ""
+    syl_base_url: str = ""
+    syl_api_key: str = ""
 
 
 class SettingsPatch(BaseModel):
@@ -28,6 +33,11 @@ class SettingsPatch(BaseModel):
     daemon_poll_interval: Optional[int] = None
     daemon_paused: Optional[bool] = None
     ollama_base_url: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
+    google_api_key: Optional[str] = None
+    syl_base_url: Optional[str] = None
+    syl_api_key: Optional[str] = None
 
 
 def _read_yaml() -> dict:
@@ -52,6 +62,11 @@ def get_current() -> SettingsOut:
         daemon_poll_interval=raw.get("daemon_poll_interval", s.daemon_poll_interval),
         daemon_paused=raw.get("daemon_paused", s.daemon_paused),
         ollama_base_url=raw.get("ollama_base_url", s.ollama_base_url),
+        anthropic_api_key=raw.get("anthropic_api_key", s.anthropic_api_key),
+        openai_api_key=raw.get("openai_api_key", s.openai_api_key),
+        google_api_key=raw.get("google_api_key", s.google_api_key),
+        syl_base_url=raw.get("syl_base_url", s.syl_base_url),
+        syl_api_key=raw.get("syl_api_key", s.syl_api_key),
     )
 
 
@@ -67,9 +82,15 @@ def update_settings(body: SettingsPatch) -> SettingsOut:
     _write_yaml(raw)
     get_settings.cache_clear()
 
+    s = get_settings()
     return SettingsOut(
         log_level=raw.get("log_level", "INFO"),
         daemon_poll_interval=raw.get("daemon_poll_interval", 86400),
         daemon_paused=raw.get("daemon_paused", False),
         ollama_base_url=raw.get("ollama_base_url", "http://localhost:11434"),
+        anthropic_api_key=raw.get("anthropic_api_key", s.anthropic_api_key),
+        openai_api_key=raw.get("openai_api_key", s.openai_api_key),
+        google_api_key=raw.get("google_api_key", s.google_api_key),
+        syl_base_url=raw.get("syl_base_url", s.syl_base_url),
+        syl_api_key=raw.get("syl_api_key", s.syl_api_key),
     )

@@ -256,13 +256,15 @@
       <input type="checkbox" id="cfg-daemon-paused" />
       <label>poll interval (s)</label>
       <input type="number" id="cfg-poll-interval" min="60" step="60" style="width:120px" />
-      <label>ollama url</label>
-      <input type="text" id="cfg-ollama-url" style="width:220px" />
     </div>
     <div id="cfg-save-row">
       <button id="cfg-save-btn">SAVE</button>
       <span id="cfg-save-status"></span>
     </div>
+  </div>
+  <div class="cfg-section" id="cfg-provider-section">
+    <div class="cfg-title">provider: <span id="cfg-provider-name">—</span></div>
+    <div class="cfg-grid" id="cfg-provider-grid"><span style="color:#333">select a model</span></div>
   </div>
 </div>
 
@@ -414,9 +416,35 @@
   const cfgLogLevel  = document.getElementById('cfg-log-level');
   const cfgDaemonPaused = document.getElementById('cfg-daemon-paused');
   const cfgPollInterval = document.getElementById('cfg-poll-interval');
-  const cfgOllamaUrl = document.getElementById('cfg-ollama-url');
   const cfgSaveBtn   = document.getElementById('cfg-save-btn');
   const cfgSaveStatus = document.getElementById('cfg-save-status');
+  const cfgProviderName = document.getElementById('cfg-provider-name');
+  const cfgProviderGrid = document.getElementById('cfg-provider-grid');
+
+  const PROVIDER_FIELDS = {
+    google:    [{ label: 'api key',  key: 'google_api_key',    type: 'password' }],
+    anthropic: [{ label: 'api key',  key: 'anthropic_api_key', type: 'password' }],
+    openai:    [{ label: 'api key',  key: 'openai_api_key',    type: 'password' }],
+    ollama:    [{ label: 'base url', key: 'ollama_base_url',   type: 'text'     }],
+    syl:       [{ label: 'base url', key: 'syl_base_url',      type: 'text'     },
+                { label: 'api key',  key: 'syl_api_key',       type: 'password' }],
+  };
+
+  let currentSettings = {};
+  let modelProviderMap = {};
+
+  function renderProviderSection(provider) {
+    cfgProviderName.textContent = provider || '—';
+    const fields = PROVIDER_FIELDS[provider] || [];
+    if (!fields.length) {
+      cfgProviderGrid.innerHTML = '<span style="color:#333">no provider settings</span>';
+      return;
+    }
+    cfgProviderGrid.innerHTML = fields.map(f =>
+      `<label>${f.label}</label>` +
+      `<input type="${f.type}" id="prov-${f.key}" data-key="${f.key}" value="${currentSettings[f.key] || ''}" style="width:220px" />`
+    ).join('');
+  }
 
   cfgToggle.addEventListener('click', () => {
     cfgPanel.classList.toggle('open');
@@ -430,6 +458,9 @@
         fetch('/models').then(r => r.json()),
         fetch('/settings').then(r => r.json()),
       ]);
+
+      currentSettings = settings;
+      modelProviderMap = Object.fromEntries(models.map(m => [m.id, m.provider]));
 
       // Model list
       cfgModelList.innerHTML = models.map(m => `
@@ -448,6 +479,7 @@
             cfgModelList.querySelectorAll('.cfg-model-item').forEach(el => {
               el.classList.toggle('active', el.querySelector('input').value === id);
             });
+            renderProviderSection(modelProviderMap[id]);
           } catch(e) {
             cfgModelList.insertAdjacentHTML('afterend', '<span style="color:#ff6b6b;font-size:0.78rem">activate failed</span>');
           }
@@ -458,7 +490,10 @@
       cfgLogLevel.value = settings.log_level;
       cfgDaemonPaused.checked = settings.daemon_paused;
       cfgPollInterval.value = settings.daemon_poll_interval;
-      cfgOllamaUrl.value = settings.ollama_base_url;
+
+      // Provider section for active model
+      const activeModel = models.find(m => m.active);
+      renderProviderSection(activeModel ? activeModel.provider : null);
     } catch(e) {
       cfgModelList.innerHTML = `<span style="color:#ff6b6b">failed to load config</span>`;
     }
@@ -473,14 +508,19 @@
         log_level: cfgLogLevel.value,
         daemon_paused: cfgDaemonPaused.checked,
         daemon_poll_interval: parseInt(cfgPollInterval.value, 10),
-        ollama_base_url: cfgOllamaUrl.value.trim(),
       };
+      // Collect provider-specific fields
+      cfgProviderGrid.querySelectorAll('input[data-key]').forEach(inp => {
+        body[inp.dataset.key] = inp.value.trim();
+      });
       const res = await fetch('/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(await res.text());
+      const saved = await res.json();
+      currentSettings = { ...currentSettings, ...saved };
       cfgSaveStatus.textContent = 'saved';
       cfgSaveStatus.className = 'ok';
     } catch(e) {

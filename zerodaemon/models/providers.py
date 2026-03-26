@@ -43,6 +43,17 @@ def build_llm(model: ModelEntry, settings) -> BaseChatModel:
             kwargs["api_key"] = settings.openai_api_key
         return ChatOpenAI(**kwargs)
 
+    if model.provider == "syl":
+        from langchain_openai import ChatOpenAI
+        kwargs = dict(
+            model=model.id,
+            max_tokens=model.max_tokens,
+            base_url=settings.syl_base_url,
+        )
+        if settings.syl_api_key:
+            kwargs["api_key"] = settings.syl_api_key
+        return ChatOpenAI(**kwargs)
+
     if model.provider == "google":
         from langchain_google_genai import ChatGoogleGenerativeAI
         kwargs = dict(model=model.id)

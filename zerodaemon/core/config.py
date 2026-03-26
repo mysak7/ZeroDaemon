@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     google_api_key: str = Field(default="", alias="GOOGLE_API_KEY")
+    syl_api_key: str = Field(default="", alias="SYL_API_KEY")
+    syl_base_url: str = "http://syl:8001/v1"
 
     @classmethod
     def settings_customise_sources(cls, settings_cls, **kwargs):
