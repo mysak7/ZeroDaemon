@@ -58,10 +58,25 @@ def check_ip_owner(ip_address: str) -> str:
 # Tool: scan_services
 # ---------------------------------------------------------------------------
 
+_PORT_PRESETS: dict[str, tuple[str, str]] = {
+    "top-10":   ("--top-ports 10",   "~5–15 s"),
+    "top-100":  ("--top-ports 100",  "~15–45 s"),
+    "top-1000": ("--top-ports 1000", "~1–3 min"),
+    "full":     ("-p 1-65535",       "~10–30 min"),
+}
+
+
 def scan_services(ip_address: str, ports: str = "top-100") -> str:
     """
-    Run a fast Nmap service scan against an IP address or hostname to discover open ports
-    and software versions. Results are persisted to the local database.
+    Run an Nmap service scan (-sV -T4 -Pn) to discover open ports and software versions.
+    Results are persisted to the local database.
+
+    ports presets and estimated times (vary by network/host responsiveness):
+      top-10   — most common 10 ports,   ~5–15 s    (quick sanity check)
+      top-100  — most common 100 ports,  ~15–45 s   (default, good balance)
+      top-1000 — most common 1000 ports, ~1–3 min   (thorough)
+      full     — all 65535 ports,        ~10–30 min (exhaustive, slow)
+    You may also pass a custom nmap port expression, e.g. "22,80,443" or "1-1024".
     Always run this before querying for CVEs.
     """
     try:
@@ -74,7 +89,11 @@ def scan_services(ip_address: str, ports: str = "top-100") -> str:
             })
         import nmap
         nm = nmap.PortScanner()
-        args = "-sV -T4 -Pn --top-ports 100" if ports == "top-100" else f"-sV -T4 -Pn -p {ports}"
+        if ports in _PORT_PRESETS:
+            port_arg, _ = _PORT_PRESETS[ports]
+            args = f"-sV -T4 -Pn {port_arg}"
+        else:
+            args = f"-sV -T4 -Pn -p {ports}"
         nm.scan(ip_address, arguments=args)
 
         scan_id = str(uuid.uuid4())
