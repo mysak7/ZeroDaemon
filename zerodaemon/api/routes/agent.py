@@ -101,12 +101,12 @@ async def chat(
 async def agent_stream(
     websocket: WebSocket,
     thread_id: str = "default",
-    registry: ModelRegistry = Depends(get_registry),
 ):
     """
     WebSocket endpoint for streaming agent token output.
     Connect, send a JSON message {"message": "..."}, receive streamed tokens.
     """
+    registry: ModelRegistry = websocket.app.state.registry
     await websocket.accept()
     try:
         data = await websocket.receive_json()

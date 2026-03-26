@@ -50,6 +50,12 @@ def scan_services(ip_address: str, ports: str = "top-100") -> str:
     Always run this before querying for CVEs.
     """
     try:
+        import shutil
+        if not shutil.which("nmap"):
+            return json.dumps({
+                "target": ip_address,
+                "error": "nmap is not installed. Run: sudo apt install nmap  (or set ZERODAEMON_AUTO_INSTALL_DEPS=true)",
+            })
         import nmap
         nm = nmap.PortScanner()
         args = "-sV -T4 --top-ports 100" if ports == "top-100" else f"-sV -T4 -p {ports}"

@@ -8,7 +8,7 @@ from typing import Literal
 from langchain_core.messages import SystemMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.memory import MemorySaver
 
 from zerodaemon.agent.state import AgentState
 from zerodaemon.agent.tools import get_tools
@@ -72,5 +72,4 @@ def build_graph(registry: ModelRegistry) -> object:
     builder.add_conditional_edges("agent", _should_continue, {"tools": "tools", "__end__": END})
     builder.add_edge("tools", "agent")
 
-    checkpointer = SqliteSaver.from_conn_string(settings.db_path)
-    return builder.compile(checkpointer=checkpointer), active.id
+    return builder.compile(checkpointer=MemorySaver()), active.id
