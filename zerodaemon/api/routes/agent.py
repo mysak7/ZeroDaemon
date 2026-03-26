@@ -140,8 +140,10 @@ async def agent_stream(
                             block.get("text", "") for block in content
                             if isinstance(block, dict) and block.get("type") == "text"
                         )
-                    else:
+                    elif isinstance(content, str):
                         text = content
+                    else:
+                        text = ""
                     if text:
                         await websocket.send_json({"event": "token", "data": text})
             elif kind == "on_tool_start":
