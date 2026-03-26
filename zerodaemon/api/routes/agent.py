@@ -134,7 +134,16 @@ async def agent_stream(
             if kind == "on_chat_model_stream":
                 chunk = event["data"]["chunk"]
                 if hasattr(chunk, "content") and chunk.content:
-                    await websocket.send_json({"event": "token", "data": chunk.content})
+                    content = chunk.content
+                    if isinstance(content, list):
+                        text = "".join(
+                            block.get("text", "") for block in content
+                            if isinstance(block, dict) and block.get("type") == "text"
+                        )
+                    else:
+                        text = content
+                    if text:
+                        await websocket.send_json({"event": "token", "data": text})
             elif kind == "on_tool_start":
                 tool_name = event.get("name", "tool")
                 tool_input = event["data"].get("input", {})
