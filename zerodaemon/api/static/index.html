@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZeroDaemon</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d0d0d;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 12px 20px;
+      border-bottom: 1px solid #1f1f1f;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    header h1 { font-size: 1rem; color: #00ff88; letter-spacing: 2px; text-transform: uppercase; }
+
+    #status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+    }
+    #status-dot.online { background: #00ff88; }
+    #status-dot.thinking { background: #ffaa00; animation: pulse 0.8s infinite alternate; }
+
+    @keyframes pulse { from { opacity: 1; } to { opacity: 0.3; } }
+
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+    }
+
+    .msg {
+      max-width: 80%;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: #1a1a2e;
+      border: 1px solid #2a2a4e;
+      padding: 10px 14px;
+      border-radius: 12px 12px 2px 12px;
+      color: #a0c4ff;
+    }
+    .msg.daemon {
+      align-self: flex-start;
+      background: #0f1f0f;
+      border: 1px solid #1a3a1a;
+      padding: 10px 14px;
+      border-radius: 12px 12px 12px 2px;
+      color: #c8f7c5;
+    }
+    .msg.tool-event {
+      align-self: flex-start;
+      color: #888;
+      font-size: 0.8rem;
+      padding: 2px 0;
+      border-left: 2px solid #333;
+      padding-left: 8px;
+    }
+    .msg.error {
+      align-self: flex-start;
+      color: #ff6b6b;
+      font-size: 0.85rem;
+    }
+
+    #input-row {
+      display: flex;
+      gap: 8px;
+      padding: 12px 20px;
+      border-top: 1px solid #1f1f1f;
+    }
+
+    #input {
+      flex: 1;
+      background: #111;
+      border: 1px solid #2a2a2a;
+      color: #e0e0e0;
+      font-family: inherit;
+      font-size: 0.95rem;
+      padding: 10px 14px;
+      border-radius: 6px;
+      outline: none;
+      resize: none;
+      height: 44px;
+      overflow: hidden;
+    }
+    #input:focus { border-color: #00ff88; }
+
+    #send-btn {
+      background: #00ff88;
+      color: #000;
+      border: none;
+      padding: 0 18px;
+      border-radius: 6px;
+      font-family: inherit;
+      font-weight: bold;
+      font-size: 0.9rem;
+      cursor: pointer;
+      letter-spacing: 1px;
+    }
+    #send-btn:disabled { background: #1a3a2a; color: #555; cursor: default; }
+
+    #usage-toggle {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: #555;
+      cursor: pointer;
+      white-space: nowrap;
+      user-select: none;
+      padding: 4px 8px;
+      border: 1px solid #222;
+      border-radius: 4px;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    #usage-toggle:hover { color: #00ff88; border-color: #00ff88; }
+    #usage-toggle .cost { color: #00ff88; }
+
+    #usage-panel {
+      display: none;
+      border-bottom: 1px solid #1f1f1f;
+      background: #0a0a0a;
+      padding: 10px 20px;
+      font-size: 0.78rem;
+      color: #666;
+    }
+    #usage-panel.open { display: block; }
+
+    #usage-panel .usage-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 6px 20px;
+    }
+    #usage-panel .usage-row { display: flex; justify-content: space-between; gap: 10px; }
+    #usage-panel .usage-label { color: #444; }
+    #usage-panel .usage-val { color: #aaa; font-variant-numeric: tabular-nums; }
+    #usage-panel .usage-model { color: #555; margin-top: 8px; padding-top: 8px; border-top: 1px solid #1a1a1a; }
+    #usage-panel .usage-model-name { color: #00cc66; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div id="status-dot"></div>
+  <h1>ZeroDaemon</h1>
+  <div id="usage-toggle" title="Toggle usage stats">cost: <span class="cost" id="hdr-cost">—</span></div>
+</header>
+
+<div id="usage-panel">
+  <div id="usage-content"><span style="color:#333">loading…</span></div>
+</div>
+
+<div id="messages">
+  <div class="msg daemon">daemon online. type an IP to scan, ask about threats, or just chat.</div>
+</div>
+
+<div id="input-row">
+  <textarea id="input" placeholder="check ip 10.0.0.1 / what is CVE-2024-1234 / ..." rows="1"></textarea>
+  <button id="send-btn">SEND</button>
+</div>
+
+<script>
+  const messagesEl = document.getElementById('messages');
+  const inputEl    = document.getElementById('input');
+  const sendBtn    = document.getElementById('send-btn');
+  const statusDot  = document.getElementById('status-dot');
+
+  const WS_URL = `ws://${location.host}/agent/stream`;
+
+  let ws = null;
+  let daemonMsgEl = null;
+
+  function appendMsg(text, cls) {
+    const el = document.createElement('div');
+    el.className = `msg ${cls}`;
+    el.textContent = text;
+    messagesEl.appendChild(el);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return el;
+  }
+
+  function setStatus(state) {
+    statusDot.className = state;
+  }
+
+  function setBusy(busy) {
+    sendBtn.disabled = busy;
+    inputEl.disabled = busy;
+    setStatus(busy ? 'thinking' : 'online');
+  }
+
+  function send() {
+    const msg = inputEl.value.trim();
+    if (!msg) return;
+
+    appendMsg(msg, 'user');
+    inputEl.value = '';
+
+    setBusy(true);
+    daemonMsgEl = null;
+
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => ws.send(JSON.stringify({ message: msg }));
+
+    ws.onmessage = (e) => {
+      const ev = JSON.parse(e.data);
+
+      if (ev.event === 'token') {
+        if (!daemonMsgEl) {
+          daemonMsgEl = appendMsg('', 'daemon');
+        }
+        daemonMsgEl.textContent += ev.data;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      } else if (ev.event === 'tool_start') {
+        appendMsg(`> ${ev.tool}(${JSON.stringify(ev.input)})`, 'tool-event');
+      } else if (ev.event === 'tool_end') {
+        appendMsg(`< ${ev.tool} done`, 'tool-event');
+      } else if (ev.event === 'done') {
+        ws.close();
+        setBusy(false);
+        // Refresh cost in header (and panel if open)
+        fetch('/models/usage/stats').then(r => r.json()).then(s => {
+          hdrCost.textContent = `$${fmt(s.total_cost_usd)}`;
+          if (usagePanel.classList.contains('open')) loadUsage();
+        }).catch(() => {});
+      } else if (ev.event === 'error') {
+        appendMsg(`error: ${ev.detail}`, 'error');
+        ws.close();
+        setBusy(false);
+      }
+    };
+
+    ws.onerror = () => {
+      appendMsg('connection error', 'error');
+      setBusy(false);
+    };
+
+    ws.onclose = () => setBusy(false);
+  }
+
+  sendBtn.addEventListener('click', send);
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+
+  // Usage panel
+  const usageToggle  = document.getElementById('usage-toggle');
+  const usagePanel   = document.getElementById('usage-panel');
+  const usageContent = document.getElementById('usage-content');
+  const hdrCost      = document.getElementById('hdr-cost');
+
+  usageToggle.addEventListener('click', () => {
+    usagePanel.classList.toggle('open');
+    if (usagePanel.classList.contains('open')) loadUsage();
+  });
+
+  function fmt(n, decimals=4) {
+    return n == null ? '—' : Number(n).toFixed(decimals);
+  }
+  function fmtTok(n) {
+    return n == null ? '—' : Number(n).toLocaleString();
+  }
+
+  async function loadUsage() {
+    try {
+      const s = await fetch('/models/usage/stats').then(r => r.json());
+      hdrCost.textContent = `$${fmt(s.total_cost_usd)}`;
+
+      let html = `<div class="usage-grid">
+        <div class="usage-row"><span class="usage-label">total calls</span><span class="usage-val">${s.total_calls}</span></div>
+        <div class="usage-row"><span class="usage-label">input tokens</span><span class="usage-val">${fmtTok(s.total_input_tokens)}</span></div>
+        <div class="usage-row"><span class="usage-label">output tokens</span><span class="usage-val">${fmtTok(s.total_output_tokens)}</span></div>
+        <div class="usage-row"><span class="usage-label">total cost</span><span class="usage-val">$${fmt(s.total_cost_usd)}</span></div>
+      </div>`;
+
+      if (s.by_model && s.by_model.length) {
+        html += `<div class="usage-model"><div class="usage-grid">`;
+        for (const m of s.by_model) {
+          html += `<div class="usage-row">
+            <span class="usage-model-name">${m.model_id}</span>
+            <span class="usage-val">${m.calls} calls · $${fmt(m.cost_usd)}</span>
+          </div>`;
+        }
+        html += `</div></div>`;
+      }
+
+      usageContent.innerHTML = html;
+    } catch(e) {
+      usageContent.innerHTML = `<span style="color:#ff6b6b">failed to load usage</span>`;
+    }
+  }
+
+  // Refresh header cost on load (quietly)
+  fetch('/models/usage/stats')
+    .then(r => r.json())
+    .then(s => { hdrCost.textContent = `$${fmt(s.total_cost_usd)}`; })
+    .catch(() => {});
+
+  // Check health on load
+  fetch('/health')
+    .then(r => r.ok ? setStatus('online') : setStatus(''))
+    .catch(() => setStatus(''));
+</script>
+
+</body>
+</html>
