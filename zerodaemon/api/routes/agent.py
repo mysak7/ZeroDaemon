@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from zerodaemon.agent import daemon
 from zerodaemon.agent.graph import build_graph
 from zerodaemon.api.deps import get_registry, get_settings_dep
-from zerodaemon.core.config import Settings
+from zerodaemon.core.config import Settings, get_settings
 from zerodaemon.models.registry import ModelRegistry
 from zerodaemon.models import usage as usage_module
 
@@ -107,6 +107,7 @@ async def agent_stream(
     Connect, send a JSON message {"message": "..."}, receive streamed tokens.
     """
     registry: ModelRegistry = websocket.app.state.registry
+    settings = get_settings()
     await websocket.accept()
     try:
         data = await websocket.receive_json()
@@ -117,44 +118,67 @@ async def agent_stream(
             return
 
         graph, model_id = build_graph(registry)
+        active = registry.get_active()
         config = {"configurable": {"thread_id": thread_id}}
+
+        entry_id, start_time = await usage_module.record_start(
+            settings.db_path, active, caller="api/stream", thread_id=thread_id
+        )
 
         await websocket.send_json({"event": "start", "model_id": model_id})
 
-        async for event in graph.astream_events(
-            {
-                "messages": [HumanMessage(content=message)],
-                "thread_id": thread_id,
-                "active_model_id": model_id,
-            },
-            config=config,
-            version="v2",
-        ):
-            kind = event.get("event", "")
-            if kind == "on_chat_model_stream":
-                chunk = event["data"]["chunk"]
-                if hasattr(chunk, "content") and chunk.content:
-                    content = chunk.content
-                    if isinstance(content, list):
-                        text = "".join(
-                            block.get("text", "") for block in content
-                            if isinstance(block, dict) and block.get("type") == "text"
-                        )
-                    elif isinstance(content, str):
-                        text = content
-                    else:
-                        text = ""
-                    if text:
-                        await websocket.send_json({"event": "token", "data": text})
-            elif kind == "on_tool_start":
-                tool_name = event.get("name", "tool")
-                tool_input = event["data"].get("input", {})
-                await websocket.send_json({"event": "tool_start", "tool": tool_name, "input": tool_input})
-            elif kind == "on_tool_end":
-                tool_name = event.get("name", "tool")
-                await websocket.send_json({"event": "tool_end", "tool": tool_name})
+        total_in_tok: int = 0
+        total_out_tok: int = 0
 
-        await websocket.send_json({"event": "done"})
+        try:
+            async for event in graph.astream_events(
+                {
+                    "messages": [HumanMessage(content=message)],
+                    "thread_id": thread_id,
+                    "active_model_id": model_id,
+                },
+                config=config,
+                version="v2",
+            ):
+                kind = event.get("event", "")
+                if kind == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"]
+                    if hasattr(chunk, "content") and chunk.content:
+                        content = chunk.content
+                        if isinstance(content, list):
+                            text = "".join(
+                                block.get("text", "") for block in content
+                                if isinstance(block, dict) and block.get("type") == "text"
+                            )
+                        elif isinstance(content, str):
+                            text = content
+                        else:
+                            text = ""
+                        if text:
+                            await websocket.send_json({"event": "token", "data": text})
+                elif kind == "on_chat_model_end":
+                    output = event["data"].get("output")
+                    meta = getattr(output, "usage_metadata", None)
+                    if meta:
+                        total_in_tok += meta.get("input_tokens", 0)
+                        total_out_tok += meta.get("output_tokens", 0)
+                elif kind == "on_tool_start":
+                    tool_name = event.get("name", "tool")
+                    tool_input = event["data"].get("input", {})
+                    await websocket.send_json({"event": "tool_start", "tool": tool_name, "input": tool_input})
+                elif kind == "on_tool_end":
+                    tool_name = event.get("name", "tool")
+                    await websocket.send_json({"event": "tool_end", "tool": tool_name})
+
+            await usage_module.record_end(
+                settings.db_path, entry_id, start_time, active,
+                total_in_tok or None, total_out_tok or None,
+            )
+            await websocket.send_json({"event": "done"})
+
+        except Exception as exc:
+            await usage_module.record_end(settings.db_path, entry_id, start_time, active, error=str(exc))
+            raise
 
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected (thread_id=%s)", thread_id)

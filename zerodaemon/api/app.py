@@ -21,6 +21,7 @@ from zerodaemon.utils.deps import ensure_required
 from zerodaemon.api.routes import models as models_router
 from zerodaemon.api.routes import agent as agent_router
 from zerodaemon.api.routes import scans as scans_router
+from zerodaemon.api.routes import settings as settings_router
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(models_router.router, prefix="/models", tags=["Models"])
     app.include_router(agent_router.router, prefix="/agent", tags=["Agent"])
     app.include_router(scans_router.router, prefix="/scans", tags=["Scans"])
+    app.include_router(settings_router.router, prefix="/settings", tags=["Settings"])
 
     _static = Path(__file__).parent / "static"
     app.mount("/static", StaticFiles(directory=_static), name="static")

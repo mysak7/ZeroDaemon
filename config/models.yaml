@@ -1,7 +1,7 @@
 # ZeroDaemon Model Registry
 # Edit 'active' or POST /models/{id}/activate to switch models at runtime.
 
-active: "gemini-2.5-flash"
+active: "gemini-3-flash-preview"
 
 models:
   # ── Google Gemini Flash ─────────────────────────────────────────────────────
