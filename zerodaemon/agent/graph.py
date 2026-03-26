@@ -51,9 +51,9 @@ def _should_continue(state: AgentState) -> Literal["tools", "__end__"]:
 
 
 def build_agent_node(llm_with_tools):
-    def agent_node(state: AgentState) -> dict:
+    async def agent_node(state: AgentState) -> dict:
         messages = [SystemMessage(content=_SYSTEM_PROMPT)] + state["messages"]
-        response = llm_with_tools.invoke(messages)
+        response = await llm_with_tools.ainvoke(messages)
         return {"messages": [response]}
     return agent_node
 
