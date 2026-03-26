@@ -36,32 +36,39 @@
 
     @keyframes pulse { from { opacity: 1; } to { opacity: 0.3; } }
 
-    .thinking-bubble {
+    .status-bubble {
       align-self: flex-start;
       background: #0f1f0f;
       border: 1px solid #1a3a1a;
-      padding: 12px 16px;
+      padding: 9px 14px;
       border-radius: 12px 12px 12px 2px;
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 8px;
+      font-size: 0.82rem;
+      color: #00cc66;
     }
-    .thinking-bubble span {
+    .s-dots { display: flex; gap: 4px; align-items: center; }
+    .s-dots span {
       display: block;
-      width: 7px;
-      height: 7px;
+      width: 6px; height: 6px;
       border-radius: 50%;
       background: #00ff88;
       animation: dot-bounce 1.2s infinite ease-in-out;
     }
-    .thinking-bubble span:nth-child(1) { animation-delay: 0s; }
-    .thinking-bubble span:nth-child(2) { animation-delay: 0.2s; }
-    .thinking-bubble span:nth-child(3) { animation-delay: 0.4s; }
+    .s-dots span:nth-child(1) { animation-delay: 0s; }
+    .s-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .s-dots span:nth-child(3) { animation-delay: 0.4s; }
+    .s-label { color: #00cc66; }
+    .s-timer { color: #336644; font-size: 0.75rem; min-width: 2.5ch; }
 
     @keyframes dot-bounce {
       0%, 60%, 100% { transform: translateY(0); opacity: 0.25; }
       30% { transform: translateY(-5px); opacity: 1; }
     }
+
+    .msg.tool-event .te-tool { color: #00aa55; }
+    .msg.tool-event .te-time { color: #335533; margin-left: 6px; }
 
     #messages {
       flex: 1;
@@ -380,23 +387,44 @@
 
   const WS_URL = `ws://${location.host}/agent/stream`;
 
+  const TOOL_LABELS = {
+    scan_services:         'nmap',
+    check_ip_owner:        'whois',
+    search_threat_intel:   'threat intel',
+    query_historical_scans:'scan history',
+    search_knowledge_base: 'knowledge base',
+  };
+
   let ws = null;
   let daemonMsgEl = null;
-  let thinkingEl = null;
+  let statusEl = null;
+  let statusInterval = null;
+  let statusStart = null;
 
-  function showThinking() {
-    thinkingEl = document.createElement('div');
-    thinkingEl.className = 'thinking-bubble';
-    thinkingEl.innerHTML = '<span></span><span></span><span></span>';
-    messagesEl.appendChild(thinkingEl);
+  function showStatus(label) {
+    statusStart = Date.now();
+    if (!statusEl) {
+      statusEl = document.createElement('div');
+      statusEl.className = 'status-bubble';
+      messagesEl.appendChild(statusEl);
+    }
+    clearInterval(statusInterval);
+    const render = () => {
+      const s = Math.floor((Date.now() - statusStart) / 1000);
+      statusEl.innerHTML =
+        `<span class="s-dots"><span></span><span></span><span></span></span>` +
+        `<span class="s-label">${label}</span>` +
+        `<span class="s-timer">${s}s</span>`;
+    };
+    render();
+    statusInterval = setInterval(render, 1000);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  function hideThinking() {
-    if (thinkingEl) {
-      thinkingEl.remove();
-      thinkingEl = null;
-    }
+  function hideStatus() {
+    clearInterval(statusInterval);
+    statusInterval = null;
+    if (statusEl) { statusEl.remove(); statusEl = null; }
   }
 
   function appendMsg(text, cls) {
@@ -406,6 +434,16 @@
     messagesEl.appendChild(el);
     messagesEl.scrollTop = messagesEl.scrollHeight;
     return el;
+  }
+
+  function appendToolEvent(tool, elapsedMs) {
+    const label = TOOL_LABELS[tool] || tool;
+    const secs  = (elapsedMs / 1000).toFixed(1);
+    const el = document.createElement('div');
+    el.className = 'msg tool-event';
+    el.innerHTML = `<span class="te-tool">${label}</span><span class="te-time">${secs}s</span>`;
+    messagesEl.appendChild(el);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
   function setStatus(state) {
@@ -427,7 +465,7 @@
 
     setBusy(true);
     daemonMsgEl = null;
-    showThinking();
+    showStatus('thinking');
 
     ws = new WebSocket(WS_URL);
 
@@ -438,16 +476,19 @@
 
       if (ev.event === 'token') {
         if (!daemonMsgEl) {
-          hideThinking();
+          hideStatus();
           daemonMsgEl = appendMsg('', 'daemon');
         }
         daemonMsgEl.textContent += ev.data;
         messagesEl.scrollTop = messagesEl.scrollHeight;
       } else if (ev.event === 'tool_start') {
-        appendMsg(`> ${ev.tool}(${JSON.stringify(ev.input)})`, 'tool-event');
+        const label = TOOL_LABELS[ev.tool] || ev.tool;
+        showStatus(`running ${label}`);
       } else if (ev.event === 'tool_end') {
-        appendMsg(`< ${ev.tool} done`, 'tool-event');
+        appendToolEvent(ev.tool, ev.elapsed_ms ?? 0);
+        showStatus('thinking');
       } else if (ev.event === 'done') {
+        hideStatus();
         ws.close();
         setBusy(false);
         // Refresh cost in header (and panel if open)
@@ -456,7 +497,7 @@
           if (usagePanel.classList.contains('open')) loadUsage();
         }).catch(() => {});
       } else if (ev.event === 'error') {
-        hideThinking();
+        hideStatus();
         appendMsg(`error: ${ev.detail}`, 'error');
         ws.close();
         setBusy(false);
@@ -464,12 +505,12 @@
     };
 
     ws.onerror = () => {
-      hideThinking();
+      hideStatus();
       appendMsg('connection error', 'error');
       setBusy(false);
     };
 
-    ws.onclose = () => { hideThinking(); setBusy(false); };
+    ws.onclose = () => { hideStatus(); setBusy(false); };
   }
 
   sendBtn.addEventListener('click', send);

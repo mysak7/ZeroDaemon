@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -138,6 +139,7 @@ async def agent_stream(
 
         total_in_tok: int = 0
         total_out_tok: int = 0
+        tool_timings: dict[str, float] = {}
 
         try:
             async for event in graph.astream_events(
@@ -172,12 +174,16 @@ async def agent_stream(
                         total_in_tok += meta.get("input_tokens", 0)
                         total_out_tok += meta.get("output_tokens", 0)
                 elif kind == "on_tool_start":
+                    run_id = event.get("run_id", "")
+                    tool_timings[run_id] = time.monotonic()
                     tool_name = event.get("name", "tool")
                     tool_input = event["data"].get("input", {})
                     await websocket.send_json({"event": "tool_start", "tool": tool_name, "input": tool_input})
                 elif kind == "on_tool_end":
+                    run_id = event.get("run_id", "")
+                    elapsed_ms = int((time.monotonic() - tool_timings.pop(run_id, time.monotonic())) * 1000)
                     tool_name = event.get("name", "tool")
-                    await websocket.send_json({"event": "tool_end", "tool": tool_name})
+                    await websocket.send_json({"event": "tool_end", "tool": tool_name, "elapsed_ms": elapsed_ms})
 
             await usage_module.record_end(
                 settings.db_path, entry_id, start_time, active,
