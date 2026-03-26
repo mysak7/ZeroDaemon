@@ -61,6 +61,28 @@ fi
 
 echo ""
 echo "==> Checking Python..."
+if ! command -v "$PYTHON" &>/dev/null; then
+    echo "    [..] $PYTHON not found — attempting install..."
+    if command -v apt-get &>/dev/null || command -v apt &>/dev/null; then
+        # Debian/Ubuntu: use deadsnakes PPA
+        APT="$(command -v apt-get || command -v apt)"
+        if ! grep -rq "deadsnakes" /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null; then
+            sudo "$APT" install -y software-properties-common
+            sudo add-apt-repository -y ppa:deadsnakes/ppa
+            sudo "$APT" update -qq
+        fi
+        sudo "$APT" install -y "${PYTHON}" "${PYTHON}-venv" "${PYTHON}-dev"
+    elif command -v brew &>/dev/null; then
+        brew install "${PYTHON/python/python@}" 2>/dev/null || brew install python
+    elif command -v dnf &>/dev/null; then
+        sudo dnf install -y "${PYTHON}"
+    elif command -v yum &>/dev/null; then
+        sudo yum install -y "${PYTHON}"
+    else
+        echo "    [!!] Cannot install $PYTHON automatically. Install it manually and re-run."
+        exit 1
+    fi
+fi
 $PYTHON --version
 
 echo "==> Creating virtual environment: $VENV"
