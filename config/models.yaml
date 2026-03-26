@@ -1,11 +1,5 @@
 active: syl-default
 models:
-- id: gemini-2.5-flash
-  provider: google
-  input_mtok: 0.3
-  output_mtok: 2.5
-  max_tokens: 65535
-  note: Gemini 2.5 Flash — best price/performance, 1M context, reasoning
 - id: gemini-2.5-flash-lite
   provider: google
   input_mtok: 0.1
@@ -18,42 +12,6 @@ models:
   output_mtok: 3.0
   max_tokens: 65536
   note: Gemini 3 Flash Preview — latest gen, frontier performance
-- id: gemini-2.5-pro
-  provider: google
-  input_mtok: 1.25
-  output_mtok: 10.0
-  max_tokens: 65536
-  note: Gemini 2.5 Pro — most capable Gemini model
-- id: claude-haiku-4-5-20251001
-  provider: anthropic
-  input_mtok: 0.8
-  output_mtok: 4.0
-  max_tokens: 8192
-  note: Fast Anthropic model, good for tool use
-- id: claude-sonnet-4-6
-  provider: anthropic
-  input_mtok: 3.0
-  output_mtok: 15.0
-  max_tokens: 8192
-  note: Anthropic Sonnet — balanced speed and quality
-- id: llama3.2:3b
-  provider: ollama
-  input_mtok: 0.0
-  output_mtok: 0.0
-  max_tokens: 4096
-  note: 'Local Ollama — no API key needed, run: ollama pull llama3.2:3b'
-- id: llama3.1:8b
-  provider: ollama
-  input_mtok: 0.0
-  output_mtok: 0.0
-  max_tokens: 8192
-  note: 'Local Ollama 8B — better reasoning, run: ollama pull llama3.1:8b'
-- id: gpt-4o-mini
-  provider: openai
-  input_mtok: 0.15
-  output_mtok: 0.6
-  max_tokens: 16384
-  note: OpenAI GPT-4o Mini — cheap and capable
 - id: syl-default
   provider: syl
   input_mtok: 0.0

@@ -6,14 +6,12 @@ import asyncio
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
 from zerodaemon.agent import daemon
-from zerodaemon.agent.graph import build_graph
-from zerodaemon.api.deps import get_registry, get_settings_dep
+from zerodaemon.api.deps import get_registry, get_settings_dep, get_graph
 from zerodaemon.core.config import Settings, get_settings
 from zerodaemon.models.registry import ModelRegistry
 from zerodaemon.models import usage as usage_module
@@ -57,12 +55,14 @@ class TargetRequest(BaseModel):
 @router.post("/chat", response_model=ChatResponse, summary="Send a message to the agent")
 async def chat(
     body: ChatRequest,
+    request: Request,
     registry: ModelRegistry = Depends(get_registry),
     settings: Settings = Depends(get_settings_dep),
 ) -> ChatResponse:
     """
     Invoke the LangGraph agent synchronously. The agent may call tools
     (nmap, whois, DDG search) before returning the final answer.
+    Conversation history is persisted across server restarts via SQLite.
     """
     active = registry.get_active()
     entry_id, start_time = await usage_module.record_start(
@@ -70,7 +70,7 @@ async def chat(
     )
 
     try:
-        graph, model_id = build_graph(registry)
+        graph, model_id = get_graph(request, registry)
         config = {"configurable": {"thread_id": body.thread_id}}
         result = await graph.ainvoke(
             {
@@ -83,7 +83,6 @@ async def chat(
         last_msg = result["messages"][-1]
         reply = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
 
-        # Record token usage from AIMessage if available
         usage = getattr(last_msg, "usage_metadata", None)
         in_tok = usage.get("input_tokens") if usage else None
         out_tok = usage.get("output_tokens") if usage else None
@@ -105,6 +104,7 @@ async def agent_stream(
     """
     WebSocket endpoint for streaming agent token output.
     Connect, send a JSON message {"message": "..."}, receive streamed tokens.
+    Conversation history is persisted across server restarts via SQLite.
     """
     registry: ModelRegistry = websocket.app.state.registry
     settings = get_settings()
@@ -117,8 +117,17 @@ async def agent_stream(
             await websocket.close()
             return
 
-        graph, model_id = build_graph(registry)
+        # Reuse the singleton graph (rebuild only if model changed)
         active = registry.get_active()
+        if getattr(websocket.app.state, "graph_model_id", None) != active.id:
+            from zerodaemon.agent.graph import build_graph
+            graph, model_id = build_graph(registry, websocket.app.state.checkpointer)
+            websocket.app.state.graph = graph
+            websocket.app.state.graph_model_id = model_id
+        else:
+            graph = websocket.app.state.graph
+            model_id = websocket.app.state.graph_model_id
+
         config = {"configurable": {"thread_id": thread_id}}
 
         entry_id, start_time = await usage_module.record_start(

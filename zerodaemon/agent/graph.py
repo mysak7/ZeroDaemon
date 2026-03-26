@@ -8,7 +8,6 @@ from typing import Literal
 from langchain_core.messages import SystemMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.memory import MemorySaver
 
 from zerodaemon.agent.state import AgentState
 from zerodaemon.agent.tools import get_tools
@@ -33,11 +32,13 @@ When a user asks you to scan a target interactively (i.e. via chat, not an autom
 
 When given an IP to analyse (automated or after depth is confirmed):
 1. Check the historical scan database to see what was open previously.
-2. Run a live service scan to discover current open ports and versions.
-3. Compare results — flag any new ports or changed service versions.
-4. Search for recent CVEs or exploit activity related to discovered services.
-5. Report findings clearly: what changed, what's risky, what to do next.
+2. Search the knowledge base for any relevant past findings or threat intel on this target.
+3. Run a live service scan to discover current open ports and versions.
+4. Compare results — flag any new ports or changed service versions.
+5. Search for recent CVEs or exploit activity related to discovered services.
+6. Report findings clearly: what changed, what's risky, what to do next.
 
+You have persistent memory across conversations — reference past findings when relevant.
 Be concise, technical, and actionable. Think like a senior security engineer.
 """
 
@@ -57,12 +58,15 @@ def build_agent_node(llm_with_tools):
     return agent_node
 
 
-def build_graph(registry: ModelRegistry) -> object:
+def build_graph(registry: ModelRegistry, checkpointer) -> tuple:
     """
     Build and compile the LangGraph agent graph.
 
     The active model is resolved at call time — switching via POST /models/{id}/activate
     takes effect on the very next invocation with no restart required.
+
+    checkpointer is provided by the caller (AsyncSqliteSaver backed by the app DB)
+    so that conversation history survives server restarts.
     """
     settings = get_settings()
     tools = get_tools()
@@ -81,4 +85,4 @@ def build_graph(registry: ModelRegistry) -> object:
     builder.add_conditional_edges("agent", _should_continue, {"tools": "tools", "__end__": END})
     builder.add_edge("tools", "agent")
 
-    return builder.compile(checkpointer=MemorySaver()), active.id
+    return builder.compile(checkpointer=checkpointer), active.id

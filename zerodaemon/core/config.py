@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     )
 
     db_path: str = "zerodaemon.db"
+    rag_path: str = "zerodaemon_rag"
     models_config_path: str = "config/models.yaml"
     log_level: str = "INFO"
     daemon_poll_interval: int = 86400

@@ -1,18 +1,8 @@
-# ZeroDaemon Application Settings
-# Sensitive values (API keys) should be set as environment variables — see .env.example
-
-db_path: "zerodaemon.db"
-models_config_path: "config/models.yaml"
-
-log_level: "INFO"
-
-# Background daemon poll interval in seconds (default: 24 hours)
-daemon_poll_interval: 86400
 daemon_paused: false
-
-# Ollama base URL (change if running on a different host/port)
-ollama_base_url: "http://localhost:11434"
-
-# Optional: override API keys here (env vars take precedence)
-# anthropic_api_key: ""
-# openai_api_key: ""
+daemon_poll_interval: 86400
+db_path: zerodaemon.db
+log_level: INFO
+models_config_path: config/models.yaml
+ollama_base_url: http://localhost:11434
+syl_api_key: MYSAK_ioijio44333663ggXddnnCCdVX884
+syl_base_url: http://syl:8001/v1

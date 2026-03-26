@@ -17,6 +17,8 @@ from zerodaemon.core.config import get_settings
 from zerodaemon.db.sqlite import init_tables
 from zerodaemon.models.registry import ModelRegistry
 from zerodaemon.agent import daemon
+from zerodaemon.agent import rag
+from zerodaemon.agent.graph import build_graph
 from zerodaemon.utils.deps import ensure_required
 from zerodaemon.api.routes import models as models_router
 from zerodaemon.api.routes import agent as agent_router
@@ -49,15 +51,31 @@ async def lifespan(app: FastAPI):
     active = registry.get_active()
     logger.info("Active model: %s (%s)", active.id, active.provider)
 
-    # Start background daemon
-    await daemon.start(registry)
-    logger.info("Daemon loop started")
+    # Initialise RAG knowledge base (non-fatal — degraded mode if deps missing)
+    try:
+        rag.init_store(settings.rag_path)
+        logger.info("RAG knowledge base ready: %s", settings.rag_path)
+    except Exception as exc:
+        logger.warning("RAG init failed (%s) — search_knowledge_base will return empty results", exc)
 
-    yield
+    # Persistent LangGraph checkpointer — keeps all conversation threads in SQLite
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+    async with AsyncSqliteSaver.from_conn_string(settings.db_path) as checkpointer:
+        graph, model_id = build_graph(registry, checkpointer)
+        app.state.graph = graph
+        app.state.graph_model_id = model_id
+        app.state.checkpointer = checkpointer
+        logger.info("Agent graph compiled (model: %s, persistent memory: ON)", model_id)
 
-    # Shutdown
-    logger.info("ZeroDaemon shutting down")
-    await daemon.stop()
+        # Start background daemon
+        await daemon.start(registry)
+        logger.info("Daemon loop started")
+
+        yield
+
+        # Shutdown
+        logger.info("ZeroDaemon shutting down")
+        await daemon.stop()
 
 
 def create_app() -> FastAPI:

@@ -126,6 +126,10 @@ def scan_services(ip_address: str, ports: str = "top-100") -> str:
         conn.commit()
         conn.close()
 
+        # Index into RAG vector store
+        from zerodaemon.agent import rag
+        rag.add_scan(scan_id, ip_address, summary, raw_json)
+
         return json.dumps({
             "scan_id": scan_id,
             "target": ip_address,
@@ -154,7 +158,13 @@ def search_threat_intel(query: str) -> str:
             {"title": r["title"], "url": r["href"], "body": r["body"][:300]}
             for r in results
         ]
-        return json.dumps({"query": query, "results": formatted})
+        result_json = json.dumps({"query": query, "results": formatted})
+
+        # Index into RAG vector store
+        from zerodaemon.agent import rag
+        rag.add_threat_intel(query, result_json)
+
+        return result_json
     except Exception as exc:
         return json.dumps({"query": query, "error": str(exc)})
 
@@ -188,6 +198,28 @@ def query_historical_scans(ip_address: str, limit: int = 5) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Tool: search_knowledge_base
+# ---------------------------------------------------------------------------
+
+def search_knowledge_base(query: str) -> str:
+    """
+    Semantic search over the local knowledge base of past scan results and threat
+    intelligence reports.  Use this to answer questions like "what services have
+    I seen on the 10.0.0.x subnet?", "any CVEs related to nginx in my history?",
+    or "what did I find last time I scanned this host?".
+    Returns the most relevant stored documents.
+    """
+    try:
+        from zerodaemon.agent import rag
+        hits = rag.search(query, k=5)
+        if not hits:
+            return json.dumps({"query": query, "results": [], "message": "Knowledge base is empty or RAG not initialised"})
+        return json.dumps({"query": query, "results": hits})
+    except Exception as exc:
+        return json.dumps({"query": query, "error": str(exc)})
+
+
+# ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
 
@@ -199,4 +231,5 @@ def get_tools():
         lc_tool(scan_services),
         lc_tool(search_threat_intel),
         lc_tool(query_historical_scans),
+        lc_tool(search_knowledge_base),
     ]
