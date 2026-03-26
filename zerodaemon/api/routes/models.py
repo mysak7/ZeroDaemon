@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from zerodaemon.api.deps import get_registry, get_settings_dep
 from zerodaemon.models.registry import ModelRegistry
-from zerodaemon.models.schemas import ModelEntry, UsageRecord, UsageStats
+from zerodaemon.models.schemas import ModelEntry, ModelCreate, ModelUpdate, UsageRecord, UsageStats
 from zerodaemon.core.config import Settings
 from zerodaemon.models import usage as usage_module
 
@@ -19,6 +19,18 @@ router = APIRouter()
 def list_models(registry: ModelRegistry = Depends(get_registry)) -> list[ModelEntry]:
     """Returns all models from config/models.yaml, marking the active one."""
     return registry.get_all()
+
+
+@router.post("", response_model=ModelEntry, status_code=201, summary="Add a new model")
+async def create_model(
+    body: ModelCreate,
+    registry: ModelRegistry = Depends(get_registry),
+) -> ModelEntry:
+    entry = ModelEntry(**body.model_dump())
+    try:
+        return await registry.add_model(entry)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @router.get("/usage/stats", response_model=UsageStats, summary="Aggregate usage statistics")
@@ -46,6 +58,32 @@ def get_model(
     if model is None:
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found")
     return model
+
+
+@router.patch("/{model_id:path}", response_model=ModelEntry, summary="Update a model's fields")
+async def update_model(
+    model_id: str,
+    body: ModelUpdate,
+    registry: ModelRegistry = Depends(get_registry),
+) -> ModelEntry:
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    try:
+        return await registry.update_model(model_id, updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.delete("/{model_id:path}", status_code=204, summary="Delete a model")
+async def delete_model(
+    model_id: str,
+    registry: ModelRegistry = Depends(get_registry),
+) -> None:
+    try:
+        await registry.delete_model(model_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/{model_id:path}/activate", response_model=ModelEntry, summary="Switch active model")

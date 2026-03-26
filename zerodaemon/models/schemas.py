@@ -16,6 +16,23 @@ class ModelEntry(BaseModel):
     active: bool = False      # computed field — True if this is the active model
 
 
+class ModelCreate(BaseModel):
+    id: str
+    provider: str
+    input_mtok: float = 0.0
+    output_mtok: float = 0.0
+    max_tokens: int = 4096
+    note: str = ""
+
+
+class ModelUpdate(BaseModel):
+    provider: Optional[str] = None
+    input_mtok: Optional[float] = None
+    output_mtok: Optional[float] = None
+    max_tokens: Optional[int] = None
+    note: Optional[str] = None
+
+
 class ActivateRequest(BaseModel):
     pass  # model_id comes from path param
 

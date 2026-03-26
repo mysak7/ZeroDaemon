@@ -83,6 +83,37 @@ class ModelRegistry:
             self._write()
             return model.model_copy(update={"active": True})
 
+    async def add_model(self, entry: ModelEntry) -> ModelEntry:
+        """Add a new model. Raises ValueError if id already exists."""
+        async with self._lock:
+            if any(m.id == entry.id for m in self._models):
+                raise ValueError(f"Model '{entry.id}' already exists")
+            self._models.append(entry)
+            self._write()
+            return entry
+
+    async def update_model(self, model_id: str, updates: dict) -> ModelEntry:
+        """Update fields on an existing model. Raises ValueError if not found."""
+        async with self._lock:
+            for i, m in enumerate(self._models):
+                if m.id == model_id:
+                    updated = m.model_copy(update=updates)
+                    self._models[i] = updated
+                    self._write()
+                    return updated.model_copy(update={"active": model_id == self._active_id})
+            raise ValueError(f"Model '{model_id}' not in registry")
+
+    async def delete_model(self, model_id: str) -> None:
+        """Delete a model. Raises ValueError if active or not found."""
+        async with self._lock:
+            if model_id == self._active_id:
+                raise ValueError(f"Cannot delete the active model '{model_id}'")
+            before = len(self._models)
+            self._models = [m for m in self._models if m.id != model_id]
+            if len(self._models) == before:
+                raise ValueError(f"Model '{model_id}' not in registry")
+            self._write()
+
     def reload(self) -> None:
         """Re-read from disk (useful after external edits to models.yaml)."""
         self._load()

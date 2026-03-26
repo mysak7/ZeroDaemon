@@ -240,6 +240,54 @@
     .cfg-model-item.active { border-color: #00ff88; color: #00ff88; }
     .cfg-model-item input[type="radio"] { accent-color: #00ff88; cursor: pointer; }
     .cfg-model-item .model-note { color: #444; font-size: 0.72rem; margin-left: auto; }
+    .cfg-model-item .model-actions { display: flex; gap: 4px; margin-left: 6px; flex-shrink: 0; }
+    .cfg-model-item .model-actions button {
+      background: none; border: 1px solid #2a2a2a; color: #555;
+      font-size: 0.7rem; padding: 1px 5px; border-radius: 3px;
+      cursor: pointer; font-family: inherit; line-height: 1.4;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .cfg-model-item .model-actions button:hover { color: #ccc; border-color: #555; }
+    .cfg-model-item .model-actions button.del:hover { color: #ff6b6b; border-color: #ff6b6b; }
+
+    #cfg-model-add-btn {
+      background: none; border: 1px dashed #2a2a2a; color: #444;
+      font-family: inherit; font-size: 0.75rem; padding: 4px 8px;
+      border-radius: 4px; cursor: pointer; text-align: left; margin-top: 2px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    #cfg-model-add-btn:hover { color: #00ff88; border-color: #00ff88; }
+
+    #cfg-model-form {
+      display: none; flex-direction: column; gap: 6px;
+      border: 1px solid #2a2a2a; border-radius: 4px;
+      padding: 10px; margin-top: 4px; background: #111;
+    }
+    #cfg-model-form.open { display: flex; }
+    #cfg-model-form .form-title { color: #555; font-size: 0.72rem; letter-spacing: 1px; text-transform: uppercase; }
+    #cfg-model-form .form-grid { display: grid; grid-template-columns: max-content 1fr; gap: 5px 10px; align-items: center; }
+    #cfg-model-form .form-grid label { color: #555; white-space: nowrap; font-size: 0.78rem; }
+    #cfg-model-form .form-grid input,
+    #cfg-model-form .form-grid select {
+      background: #0d0d0d; border: 1px solid #2a2a2a; color: #ccc;
+      font-family: inherit; font-size: 0.78rem; padding: 3px 7px;
+      border-radius: 3px; outline: none; width: 100%;
+    }
+    #cfg-model-form .form-grid input:focus,
+    #cfg-model-form .form-grid select:focus { border-color: #00ff88; }
+    #cfg-model-form .form-grid input:disabled { color: #444; }
+    #cfg-model-form .form-actions { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
+    #cfg-model-form .form-actions button {
+      font-family: inherit; font-size: 0.78rem; padding: 4px 12px;
+      border-radius: 3px; cursor: pointer; border: none; font-weight: bold;
+    }
+    #cfg-model-form .form-save { background: #00ff88; color: #000; }
+    #cfg-model-form .form-save:disabled { background: #1a3a2a; color: #555; cursor: default; }
+    #cfg-model-form .form-cancel { background: none; border: 1px solid #2a2a2a !important; color: #555; }
+    #cfg-model-form .form-cancel:hover { color: #ccc; border-color: #555 !important; }
+    #cfg-model-form .form-status { font-size: 0.75rem; }
+    #cfg-model-form .form-status.ok { color: #00ff88; }
+    #cfg-model-form .form-status.err { color: #ff6b6b; }
 
     #cfg-save-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
     #cfg-save-btn {
@@ -271,6 +319,26 @@
   <div class="cfg-section">
     <div class="cfg-title">active model</div>
     <div class="cfg-model-list" id="cfg-model-list"><span style="color:#333">loading…</span></div>
+    <button id="cfg-model-add-btn">+ add model</button>
+    <div id="cfg-model-form">
+      <div class="form-title" id="cfg-model-form-title">add model</div>
+      <div class="form-grid">
+        <label>id</label>         <input type="text"   id="fld-id"         placeholder="provider/model-name" />
+        <label>provider</label>   <select id="fld-provider">
+          <option>google</option><option>anthropic</option><option>openai</option>
+          <option>ollama</option><option>syl</option>
+        </select>
+        <label>note</label>       <input type="text"   id="fld-note"       placeholder="short description" />
+        <label>input $/mtok</label>  <input type="number" id="fld-input-mtok"  step="0.001" min="0" placeholder="0.0" />
+        <label>output $/mtok</label> <input type="number" id="fld-output-mtok" step="0.001" min="0" placeholder="0.0" />
+        <label>max tokens</label> <input type="number" id="fld-max-tokens"  min="1" placeholder="65535" />
+      </div>
+      <div class="form-actions">
+        <button class="form-save" id="cfg-model-form-save">SAVE</button>
+        <button class="form-cancel" id="cfg-model-form-cancel">cancel</button>
+        <span class="form-status" id="cfg-model-form-status"></span>
+      </div>
+    </div>
   </div>
   <div class="cfg-section">
     <div class="cfg-title">settings</div>
@@ -479,6 +547,7 @@
 
   let currentSettings = {};
   let modelProviderMap = {};
+  let allModels = [];
 
   function renderProviderSection(provider) {
     cfgProviderName.textContent = provider || '—';
@@ -499,6 +568,64 @@
     if (cfgPanel.classList.contains('open')) loadConfig();
   });
 
+  function renderModelList(models) {
+    allModels = models;
+    modelProviderMap = Object.fromEntries(models.map(m => [m.id, m.provider]));
+
+    cfgModelList.innerHTML = models.map(m => `
+      <label class="cfg-model-item ${m.active ? 'active' : ''}">
+        <input type="radio" name="cfg-model" value="${m.id}" ${m.active ? 'checked' : ''} />
+        <span>${m.id}</span>
+        <span class="model-note">${m.note || ''}</span>
+        <span class="model-actions">
+          <button class="edit-model-btn" data-id="${m.id}" title="Edit">✎</button>
+          <button class="del delete-model-btn" data-id="${m.id}" data-active="${m.active}" title="Delete">✕</button>
+        </span>
+      </label>
+    `).join('');
+
+    cfgModelList.querySelectorAll('input[type="radio"]').forEach(radio => {
+      radio.addEventListener('change', async () => {
+        const id = radio.value;
+        try {
+          await fetch(`/models/${encodeURIComponent(id)}/activate`, { method: 'POST' });
+          cfgModelList.querySelectorAll('.cfg-model-item').forEach(el => {
+            el.classList.toggle('active', el.querySelector('input').value === id);
+          });
+          renderProviderSection(modelProviderMap[id]);
+        } catch(e) {
+          cfgModelList.insertAdjacentHTML('afterend', '<span style="color:#ff6b6b;font-size:0.78rem">activate failed</span>');
+        }
+      });
+    });
+
+    cfgModelList.querySelectorAll('.edit-model-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const m = allModels.find(x => x.id === btn.dataset.id);
+        if (m) openModelForm('edit', m);
+      });
+    });
+
+    cfgModelList.querySelectorAll('.delete-model-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        if (btn.dataset.active === 'true') {
+          setFormStatus('cannot delete the active model', 'err');
+          return;
+        }
+        if (!confirm(`Delete model "${btn.dataset.id}"?`)) return;
+        try {
+          const res = await fetch(`/models/${encodeURIComponent(btn.dataset.id)}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+          await loadConfig();
+        } catch(e) {
+          alert(`Delete failed: ${e.message}`);
+        }
+      });
+    });
+  }
+
   async function loadConfig() {
     try {
       const [models, settings] = await Promise.all([
@@ -507,31 +634,7 @@
       ]);
 
       currentSettings = settings;
-      modelProviderMap = Object.fromEntries(models.map(m => [m.id, m.provider]));
-
-      // Model list
-      cfgModelList.innerHTML = models.map(m => `
-        <label class="cfg-model-item ${m.active ? 'active' : ''}">
-          <input type="radio" name="cfg-model" value="${m.id}" ${m.active ? 'checked' : ''} />
-          <span>${m.id}</span>
-          <span class="model-note">${m.note || ''}</span>
-        </label>
-      `).join('');
-
-      cfgModelList.querySelectorAll('input[type="radio"]').forEach(radio => {
-        radio.addEventListener('change', async () => {
-          const id = radio.value;
-          try {
-            await fetch(`/models/${encodeURIComponent(id)}/activate`, { method: 'POST' });
-            cfgModelList.querySelectorAll('.cfg-model-item').forEach(el => {
-              el.classList.toggle('active', el.querySelector('input').value === id);
-            });
-            renderProviderSection(modelProviderMap[id]);
-          } catch(e) {
-            cfgModelList.insertAdjacentHTML('afterend', '<span style="color:#ff6b6b;font-size:0.78rem">activate failed</span>');
-          }
-        });
-      });
+      renderModelList(models);
 
       // Settings form
       cfgLogLevel.value = settings.log_level;
@@ -545,6 +648,82 @@
       cfgModelList.innerHTML = `<span style="color:#ff6b6b">failed to load config</span>`;
     }
   }
+
+  // ── Model add/edit form ──────────────────────────────────────────────────────
+  const cfgModelAddBtn    = document.getElementById('cfg-model-add-btn');
+  const cfgModelForm      = document.getElementById('cfg-model-form');
+  const cfgModelFormTitle = document.getElementById('cfg-model-form-title');
+  const cfgModelFormSave  = document.getElementById('cfg-model-form-save');
+  const cfgModelFormCancel = document.getElementById('cfg-model-form-cancel');
+  const cfgModelFormStatus = document.getElementById('cfg-model-form-status');
+
+  let modelFormMode = 'add'; // 'add' | 'edit'
+
+  function setFormStatus(msg, cls) {
+    cfgModelFormStatus.textContent = msg;
+    cfgModelFormStatus.className = `form-status ${cls}`;
+    if (cls === 'ok') setTimeout(() => { cfgModelFormStatus.textContent = ''; }, 2500);
+  }
+
+  function openModelForm(mode, model) {
+    modelFormMode = mode;
+    cfgModelFormTitle.textContent = mode === 'edit' ? `edit: ${model.id}` : 'add model';
+    document.getElementById('fld-id').value = model ? model.id : '';
+    document.getElementById('fld-id').disabled = mode === 'edit';
+    document.getElementById('fld-provider').value = model ? model.provider : 'google';
+    document.getElementById('fld-note').value = model ? (model.note || '') : '';
+    document.getElementById('fld-input-mtok').value = model ? model.input_mtok : '';
+    document.getElementById('fld-output-mtok').value = model ? model.output_mtok : '';
+    document.getElementById('fld-max-tokens').value = model ? model.max_tokens : '';
+    cfgModelFormStatus.textContent = '';
+    cfgModelForm.classList.add('open');
+    document.getElementById('fld-id').focus();
+  }
+
+  function closeModelForm() {
+    cfgModelForm.classList.remove('open');
+  }
+
+  cfgModelAddBtn.addEventListener('click', () => openModelForm('add', null));
+  cfgModelFormCancel.addEventListener('click', closeModelForm);
+
+  cfgModelFormSave.addEventListener('click', async () => {
+    const id       = document.getElementById('fld-id').value.trim();
+    const provider = document.getElementById('fld-provider').value;
+    const note     = document.getElementById('fld-note').value.trim();
+    const inputMtok  = parseFloat(document.getElementById('fld-input-mtok').value) || 0;
+    const outputMtok = parseFloat(document.getElementById('fld-output-mtok').value) || 0;
+    const maxTokens  = parseInt(document.getElementById('fld-max-tokens').value, 10) || 4096;
+
+    if (!id) { setFormStatus('id is required', 'err'); return; }
+
+    cfgModelFormSave.disabled = true;
+    setFormStatus('saving…', '');
+    try {
+      let res;
+      if (modelFormMode === 'add') {
+        res = await fetch('/models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, provider, note, input_mtok: inputMtok, output_mtok: outputMtok, max_tokens: maxTokens }),
+        });
+      } else {
+        res = await fetch(`/models/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider, note, input_mtok: inputMtok, output_mtok: outputMtok, max_tokens: maxTokens }),
+        });
+      }
+      if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+      setFormStatus('saved', 'ok');
+      setTimeout(closeModelForm, 800);
+      await loadConfig();
+    } catch(e) {
+      setFormStatus(e.message, 'err');
+    } finally {
+      cfgModelFormSave.disabled = false;
+    }
+  });
 
   cfgSaveBtn.addEventListener('click', async () => {
     cfgSaveBtn.disabled = true;
