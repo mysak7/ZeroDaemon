@@ -1,4 +1,4 @@
-active: gemini-3-flash-preview
+active: syl-default
 models:
 - id: gemini-2.5-flash
   provider: google
