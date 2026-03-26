@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -13,16 +14,30 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _resolve(target: str) -> str:
+    """Resolve a hostname to an IP address; return the target unchanged if it's already an IP."""
+    try:
+        socket.inet_aton(target)  # raises if not a valid IPv4 literal
+        return target
+    except OSError:
+        pass
+    try:
+        return socket.getaddrinfo(target, None)[0][4][0]
+    except Exception as exc:
+        raise ValueError(f"Cannot resolve '{target}': {exc}") from exc
+
+
 # ---------------------------------------------------------------------------
 # Tool: check_ip_owner
 # ---------------------------------------------------------------------------
 
 def check_ip_owner(ip_address: str) -> str:
     """
-    Find out who owns an IP address (ISP, cloud provider, organisation).
+    Find out who owns an IP address or hostname (ISP, cloud provider, organisation).
     Returns the ASN description and registered org name.
     """
     try:
+        ip_address = _resolve(ip_address)
         from ipwhois import IPWhois
         result = IPWhois(ip_address).lookup_rdap(depth=1)
         asn_desc = result.get("asn_description") or "Unknown ASN"
@@ -45,11 +60,12 @@ def check_ip_owner(ip_address: str) -> str:
 
 def scan_services(ip_address: str, ports: str = "top-100") -> str:
     """
-    Run a fast Nmap service scan against an IP address to discover open ports
+    Run a fast Nmap service scan against an IP address or hostname to discover open ports
     and software versions. Results are persisted to the local database.
     Always run this before querying for CVEs.
     """
     try:
+        ip_address = _resolve(ip_address)
         import shutil
         if not shutil.which("nmap"):
             return json.dumps({
@@ -58,7 +74,7 @@ def scan_services(ip_address: str, ports: str = "top-100") -> str:
             })
         import nmap
         nm = nmap.PortScanner()
-        args = "-sV -T4 --top-ports 100" if ports == "top-100" else f"-sV -T4 -p {ports}"
+        args = "-sV -T4 -Pn --top-ports 100" if ports == "top-100" else f"-sV -T4 -Pn -p {ports}"
         nm.scan(ip_address, arguments=args)
 
         scan_id = str(uuid.uuid4())
@@ -130,10 +146,11 @@ def search_threat_intel(query: str) -> str:
 
 def query_historical_scans(ip_address: str, limit: int = 5) -> str:
     """
-    Retrieve previous scan results for an IP from the local database.
+    Retrieve previous scan results for an IP or hostname from the local database.
     Use this BEFORE running a live scan to detect drift (new ports, changed services).
     """
     try:
+        ip_address = _resolve(ip_address)
         from zerodaemon.core.config import get_settings
         db_path = get_settings().db_path
         conn = sqlite3.connect(db_path)
