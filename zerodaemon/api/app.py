@@ -19,6 +19,7 @@ from zerodaemon.models.registry import ModelRegistry
 from zerodaemon.agent import daemon
 from zerodaemon.agent import rag
 from zerodaemon.agent.graph import build_graph
+from zerodaemon.agent.mcp_tools import mcp_lifespan
 from zerodaemon.utils.deps import ensure_required
 from zerodaemon.api.routes import models as models_router
 from zerodaemon.api.routes import agent as agent_router
@@ -60,22 +61,25 @@ async def lifespan(app: FastAPI):
 
     # Persistent LangGraph checkpointer — keeps all conversation threads in SQLite
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-    async with AsyncSqliteSaver.from_conn_string(settings.db_path) as checkpointer:
-        graph, model_id = build_graph(registry, checkpointer)
-        app.state.graph = graph
-        app.state.graph_model_id = model_id
-        app.state.checkpointer = checkpointer
-        logger.info("Agent graph compiled (model: %s, persistent memory: ON)", model_id)
+    async with mcp_lifespan(settings) as mcp_tools:
+        app.state.mcp_tools = mcp_tools
 
-        # Start background daemon
-        await daemon.start(registry)
-        logger.info("Daemon loop started")
+        async with AsyncSqliteSaver.from_conn_string(settings.db_path) as checkpointer:
+            graph, model_id = build_graph(registry, checkpointer, extra_tools=mcp_tools)
+            app.state.graph = graph
+            app.state.graph_model_id = model_id
+            app.state.checkpointer = checkpointer
+            logger.info("Agent graph compiled (model: %s, persistent memory: ON)", model_id)
 
-        yield
+            # Start background daemon
+            await daemon.start(registry)
+            logger.info("Daemon loop started")
 
-        # Shutdown
-        logger.info("ZeroDaemon shutting down")
-        await daemon.stop()
+            yield
+
+            # Shutdown
+            logger.info("ZeroDaemon shutting down")
+            await daemon.stop()
 
 
 def create_app() -> FastAPI:

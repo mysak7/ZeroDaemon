@@ -223,13 +223,18 @@ def search_knowledge_base(query: str) -> str:
 # Tool registry
 # ---------------------------------------------------------------------------
 
-def get_tools():
-    """Return the list of LangChain tool callables for the agent graph."""
+def get_tools(extra_tools: list | None = None) -> list:
+    """Return the list of LangChain tool callables for the agent graph.
+
+    extra_tools: optional additional tools (e.g. from an MCP server) appended
+    after the built-in tools.
+    """
     from langchain_core.tools import tool as lc_tool
-    return [
+    base = [
         lc_tool(check_ip_owner),
         lc_tool(scan_services),
         lc_tool(search_threat_intel),
         lc_tool(query_historical_scans),
         lc_tool(search_knowledge_base),
     ]
+    return base + (extra_tools or [])

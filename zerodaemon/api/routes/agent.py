@@ -122,7 +122,8 @@ async def agent_stream(
         active = registry.get_active()
         if getattr(websocket.app.state, "graph_model_id", None) != active.id:
             from zerodaemon.agent.graph import build_graph
-            graph, model_id = build_graph(registry, websocket.app.state.checkpointer)
+            mcp_tools = getattr(websocket.app.state, "mcp_tools", None)
+            graph, model_id = build_graph(registry, websocket.app.state.checkpointer, extra_tools=mcp_tools)
             websocket.app.state.graph = graph
             websocket.app.state.graph_model_id = model_id
         else:

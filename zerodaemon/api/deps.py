@@ -27,7 +27,8 @@ def get_graph(request: Request, registry: ModelRegistry = None):
     active = registry.get_active()
     if getattr(request.app.state, "graph_model_id", None) != active.id:
         from zerodaemon.agent.graph import build_graph
-        graph, model_id = build_graph(registry, request.app.state.checkpointer)
+        mcp_tools = getattr(request.app.state, "mcp_tools", None)
+        graph, model_id = build_graph(registry, request.app.state.checkpointer, extra_tools=mcp_tools)
         request.app.state.graph = graph
         request.app.state.graph_model_id = model_id
     return request.app.state.graph, request.app.state.graph_model_id

@@ -26,6 +26,7 @@ dependencies = [
     "langchain-community>=0.3",
     "faiss-cpu>=1.8",
     "fastembed>=0.3",
+    "langchain-mcp-adapters>=0.1",
 ]
 
 [build-system]

@@ -58,7 +58,7 @@ def build_agent_node(llm_with_tools):
     return agent_node
 
 
-def build_graph(registry: ModelRegistry, checkpointer) -> tuple:
+def build_graph(registry: ModelRegistry, checkpointer, extra_tools: list | None = None) -> tuple:
     """
     Build and compile the LangGraph agent graph.
 
@@ -67,9 +67,12 @@ def build_graph(registry: ModelRegistry, checkpointer) -> tuple:
 
     checkpointer is provided by the caller (AsyncSqliteSaver backed by the app DB)
     so that conversation history survives server restarts.
+
+    extra_tools: optional additional tools (e.g. from MCP) to include alongside
+    the built-in tools.
     """
     settings = get_settings()
-    tools = get_tools()
+    tools = get_tools(extra_tools)
 
     active = registry.get_active()
     llm = providers.build_llm(active, settings)

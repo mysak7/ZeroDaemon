@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     google_api_key: str = Field(default="", alias="GOOGLE_API_KEY")
     syl_api_key: str = Field(default="", alias="SYL_API_KEY")
     syl_base_url: str = "http://syl:8001/v1"
+    mcp_server_url: str = ""
+    mcp_api_key: str = Field(default="", alias="MCP_API_KEY")
 
     @classmethod
     def settings_customise_sources(cls, settings_cls, **kwargs):

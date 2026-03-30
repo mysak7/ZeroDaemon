@@ -6,3 +6,4 @@ models_config_path: config/models.yaml
 ollama_base_url: http://localhost:11434
 syl_api_key: MYSAK_ioijio44333663ggXddnnCCdVX884
 syl_base_url: http://syl:8001/v1
+mcp_server_url: http://awsw:8765/mcp
