@@ -1,5 +1,11 @@
-active: syl-default
+active: claude-fable-5
 models:
+- id: claude-fable-5
+  provider: anthropic
+  input_mtok: 10.0
+  output_mtok: 50.0
+  max_tokens: 128000
+  note: Claude Fable 5 — Anthropic flagship, 1M context, always-on thinking
 - id: gemini-2.5-flash-lite
   provider: google
   input_mtok: 0.1

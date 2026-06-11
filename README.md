@@ -2,15 +2,19 @@
 
 A local AI-driven DevSecOps assistant for autonomous infrastructure monitoring, drift detection, and threat intelligence. ZeroDaemon combines LLMs with professional security tools (nmap, WHOIS, CVE search) to continuously watch your IPs, detect configuration changes, and surface threats — with no cloud dependency required.
 
+Default model: **Claude Fable 5** (`claude-fable-5`) — Anthropic's flagship model, 1M context, always-on extended thinking.
+
 ## Features
 
 - **Drift detection** — Compares live nmap scans against historical baselines; alerts on new ports, changed services, or version bumps
 - **Threat intelligence** — Searches live CVE/exploit databases when anomalies are detected
 - **Persistent memory** — SQLite + FAISS vector store for semantic search over past scans and threat intel
-- **Daemon mode** — Scheduled background scanning of registered targets at configurable intervals
-- **Multi-model support** — Claude, GPT-4, Gemini, Ollama, or any OpenAI-compatible endpoint; hot-swap without restart
+- **Daemon mode** — Scheduled background scanning of registered targets at configurable intervals; targets persist across restarts
+- **Multi-model support** — Claude Fable 5, GPT-4, Gemini, Ollama, or any OpenAI-compatible endpoint; hot-swap without restart
 - **Usage tracking** — Per-invocation token counts, latency, and USD cost logged per model
 - **Terminal-style web UI** — Real-time streaming chat with tool execution timing
+- **Optional API key auth** — Set `ZERODAEMON_API_KEY` to require `Authorization: Bearer <key>` on all routes
+- **Configurable CORS** — Lock down allowed origins for production deployments
 
 ## Tech Stack
 
@@ -18,6 +22,7 @@ A local AI-driven DevSecOps assistant for autonomous infrastructure monitoring, 
 |---|---|
 | API | FastAPI + Uvicorn |
 | Agent | LangGraph + LangChain |
+| Default LLM | Claude Fable 5 (Anthropic) |
 | Security | nmap, ipwhois, DuckDuckGo search |
 | Storage | SQLite (aiosqlite), FAISS (faiss-cpu) |
 | Embeddings | FastEmbed (`BAAI/bge-small-en-v1.5`) |
@@ -25,10 +30,12 @@ A local AI-driven DevSecOps assistant for autonomous infrastructure monitoring, 
 
 ## Requirements
 
-- Python 3.14+
+- Python 3.12+
 - System tools: `nmap`, `whois` (others optional: `masscan`, `nikto`, `nuclei`)
 
-## Setup
+## Quick Start
+
+### Local
 
 ```bash
 # 1. Run setup (installs system tools, creates venv, copies .env)
@@ -43,18 +50,29 @@ vi .env
 
 The server starts on **http://localhost:8222**.
 
-### Environment Variables (`.env`)
+### Docker
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-...
+cp .env.example .env
+vi .env   # fill in ANTHROPIC_API_KEY at minimum
+docker compose up -d
+```
+
+## Environment Variables (`.env`)
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...   # Required for Claude Fable 5 (default model)
 OPENAI_API_KEY=sk-...
 GOOGLE_API_KEY=AIza...
-MCP_API_KEY=...         # API key for the MCP server (seip-mcp)
+MCP_API_KEY=...                # API key for the MCP server (seip-mcp)
 
-# Optional
+# Optional overrides
 ZERODAEMON_DB_PATH=zerodaemon.db
 ZERODAEMON_OLLAMA_BASE_URL=http://localhost:11434
-ZERODAEMON_AUTO_INSTALL_DEPS=false   # auto-install missing system tools
+
+# Production security
+ZERODAEMON_API_KEY=change-me   # Enables Bearer token auth on all routes
+ZERODAEMON_ALLOWED_ORIGINS='["https://your-domain.com"]'  # CORS allowlist
 ```
 
 ## Configuration
@@ -71,20 +89,22 @@ rag_path: zerodaemon_rag
 ### `config/models.yaml`
 
 ```yaml
-active: syl-default
+active: claude-fable-5
 
 models:
-  - id: gemini-2.5-flash-lite
-    provider: google
-    input_mtok: 0.1
-    output_mtok: 0.4
-    max_tokens: 65535
+  - id: claude-fable-5
+    provider: anthropic
+    input_mtok: 10.0
+    output_mtok: 50.0
+    max_tokens: 128000
+    note: Claude Fable 5 — Anthropic flagship, 1M context, always-on thinking
 
   - id: syl-default
-    provider: syl              # local OpenAI-compatible endpoint
+    provider: syl
     input_mtok: 0.0
     output_mtok: 0.0
     max_tokens: 8192
+    note: Syl local OpenAI-compatible endpoint at http://syl:8001/v1
 ```
 
 All settings and model registry can be updated at runtime via API — no restart needed.
@@ -108,8 +128,8 @@ All settings and model registry can be updated at runtime via API — no restart
 | `POST` | `/agent/chat` | Synchronous chat |
 | `WS` | `/agent/stream?thread_id=xyz` | Streaming WebSocket |
 | `GET` | `/agent/status` | Daemon status, active model, targets |
-| `POST` | `/agent/targets` | Register IP for monitoring |
-| `DELETE` | `/agent/targets/{ip}` | Remove IP from monitoring |
+| `POST` | `/agent/targets` | Register IP/hostname for monitoring |
+| `DELETE` | `/agent/targets/{ip}` | Remove IP/hostname from monitoring |
 
 **Chat request:**
 
@@ -123,7 +143,7 @@ All settings and model registry can be updated at runtime via API — no restart
 **WebSocket stream events:**
 
 ```json
-{"event": "start", "model_id": "syl-default"}
+{"event": "start", "model_id": "claude-fable-5"}
 {"event": "tool_start", "tool": "scan_services", "input": {...}}
 {"event": "token", "data": "Found 3 open ports..."}
 {"event": "tool_end", "tool": "scan_services", "elapsed_ms": 4821}
@@ -152,15 +172,21 @@ All settings and model registry can be updated at runtime via API — no restart
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/settings` | Current settings |
+| `GET` | `/settings` | Current settings (API keys masked) |
 | `PATCH` | `/settings` | Update and persist to YAML |
 
 ### System
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | Health check |
+| `GET` | `/health` | Health check (exempt from auth) |
 | `GET` | `/docs` | Swagger UI |
+
+## Security
+
+- **API key auth**: set `ZERODAEMON_API_KEY` — all routes except `/health`, `/docs`, `/redoc`, and `/` require `Authorization: Bearer <key>`
+- **CORS**: defaults to `["*"]` for local dev; set `ZERODAEMON_ALLOWED_ORIGINS` to a JSON array to restrict in production
+- **API key masking**: `GET /settings` returns `***` for any configured key — keys are never exposed via API
 
 ## Project Structure
 
@@ -168,18 +194,20 @@ All settings and model registry can be updated at runtime via API — no restart
 ZeroDaemon/
 ├── main.py                    # Entry point
 ├── run.sh / setup.sh          # Run and install scripts
+├── Dockerfile                 # Production container image
+├── docker-compose.yml         # Full-stack deployment
 ├── config/
-│   ├── models.yaml            # LLM registry
+│   ├── models.yaml            # LLM registry (active: claude-fable-5)
 │   └── settings.yaml          # Runtime settings
 └── zerodaemon/
     ├── api/
-    │   ├── app.py             # FastAPI app + lifespan
+    │   ├── app.py             # FastAPI app + lifespan + auth middleware
     │   ├── routes/            # agent, models, scans, settings
     │   └── static/index.html  # Web UI
     ├── agent/
     │   ├── graph.py           # LangGraph orchestration
     │   ├── tools.py           # 5 core agent tools
-    │   ├── daemon.py          # Background scan loop
+    │   ├── daemon.py          # Background scan loop (persistent targets)
     │   └── rag.py             # FAISS knowledge base
     ├── db/
     │   └── sqlite.py          # Schema + async queries
@@ -196,3 +224,5 @@ ZeroDaemon/
 **`threat_intel`** — `indicator, indicator_type, fetched_ts, data_json, verdict`
 
 **`llm_usage`** — `ts, model_id, provider, thread_id, input_tokens, output_tokens, cost_usd, duration_ms, status`
+
+**`daemon_targets`** — `ip` (persisted monitoring targets, survives restarts)

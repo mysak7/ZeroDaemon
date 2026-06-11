@@ -1,0 +1,22 @@
+services:
+  zerodaemon:
+    build: .
+    ports:
+      - "8222:8222"
+    volumes:
+      - zerodaemon_data:/app/data
+    env_file:
+      - .env
+    environment:
+      ZERODAEMON_DB_PATH: /app/data/zerodaemon.db
+      ZERODAEMON_RAG_PATH: /app/data/zerodaemon_rag
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8222/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  zerodaemon_data:

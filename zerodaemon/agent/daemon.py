@@ -26,6 +26,30 @@ _state = DaemonState()
 _stop_event: Optional[asyncio.Event] = None
 _wake_event: Optional[asyncio.Event] = None
 _task: Optional[asyncio.Task] = None
+_checkpointer = None
+_db_path: str = "zerodaemon.db"
+
+
+async def _load_targets() -> list[str]:
+    from zerodaemon.db.sqlite import get_db
+    async with get_db(_db_path) as conn:
+        async with conn.execute("SELECT ip FROM daemon_targets ORDER BY rowid") as cur:
+            rows = await cur.fetchall()
+    return [r["ip"] for r in rows]
+
+
+async def _persist_target_add(ip: str) -> None:
+    from zerodaemon.db.sqlite import get_db
+    async with get_db(_db_path) as conn:
+        await conn.execute("INSERT OR IGNORE INTO daemon_targets (ip) VALUES (?)", (ip,))
+        await conn.commit()
+
+
+async def _persist_target_remove(ip: str) -> None:
+    from zerodaemon.db.sqlite import get_db
+    async with get_db(_db_path) as conn:
+        await conn.execute("DELETE FROM daemon_targets WHERE ip = ?", (ip,))
+        await conn.commit()
 
 
 async def _run_scan(registry, target: str) -> None:
@@ -36,7 +60,7 @@ async def _run_scan(registry, target: str) -> None:
     _state.last_target = target
 
     try:
-        graph, _ = build_graph(registry)
+        graph, _ = build_graph(registry, _checkpointer)
         config = {"configurable": {"thread_id": f"daemon_{target}"}}
         prompt = (
             f"Initiate your daily security routine for IP: {target}. "
@@ -45,12 +69,12 @@ async def _run_scan(registry, target: str) -> None:
             "3. If there are new ports or changed versions, search for recent CVEs. "
             "Report any anomalies or drift you detect."
         )
-        async for event in graph.astream(
+        async for _ in graph.astream(
             {"messages": [HumanMessage(content=prompt)], "thread_id": f"daemon_{target}", "active_model_id": ""},
             config=config,
             stream_mode="values",
         ):
-            pass  # Results stored in LangGraph checkpointer; log last message
+            pass  # Results stored in LangGraph checkpointer
 
         _state.last_run_ts = datetime.now(timezone.utc).isoformat()
         _state.error = None
@@ -97,10 +121,21 @@ async def _loop(registry) -> None:
     logger.info("ZeroDaemon background loop stopped")
 
 
-async def start(registry) -> None:
-    global _stop_event, _wake_event, _task
+async def start(registry, checkpointer=None, db_path: str = "zerodaemon.db") -> None:
+    global _stop_event, _wake_event, _task, _checkpointer, _db_path
+    _checkpointer = checkpointer
+    _db_path = db_path
     _stop_event = asyncio.Event()
     _wake_event = asyncio.Event()
+
+    # Load persisted targets from DB
+    try:
+        targets = await _load_targets()
+        _state.scheduled_targets = targets
+        logger.info("Daemon loaded %d persisted target(s)", len(targets))
+    except Exception as exc:
+        logger.warning("Could not load persisted daemon targets: %s", exc)
+
     _task = asyncio.create_task(_loop(registry), name="zerodaemon-loop")
 
 
@@ -123,11 +158,13 @@ def get_state() -> DaemonState:
     return _state
 
 
-def add_target(ip: str) -> None:
+async def add_target(ip: str) -> None:
     if ip not in _state.scheduled_targets:
         _state.scheduled_targets.append(ip)
+        await _persist_target_add(ip)
         wake()
 
 
-def remove_target(ip: str) -> None:
+async def remove_target(ip: str) -> None:
     _state.scheduled_targets = [t for t in _state.scheduled_targets if t != ip]
+    await _persist_target_remove(ip)

@@ -3,6 +3,7 @@
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 import yaml
 from dotenv import load_dotenv
@@ -44,6 +45,11 @@ class Settings(BaseSettings):
     syl_base_url: str = "http://syl:8001/v1"
     mcp_server_url: str = ""
     mcp_api_key: str = Field(default="", alias="MCP_API_KEY")
+
+    # Auth — if set, all non-exempt routes require Authorization: Bearer <api_key>
+    api_key: Optional[str] = Field(default=None, validation_alias="ZERODAEMON_API_KEY")
+    # CORS — JSON list, e.g. '["https://app.example.com"]'
+    allowed_origins: list[str] = Field(default_factory=lambda: ["*"])
 
     @classmethod
     def settings_customise_sources(cls, settings_cls, **kwargs):

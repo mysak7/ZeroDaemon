@@ -14,6 +14,12 @@ from zerodaemon.core.config import get_settings
 router = APIRouter()
 
 _SETTINGS_YAML = Path("config/settings.yaml")
+_MASKED = "***"
+
+
+def _mask(value: str) -> str:
+    """Return '***' when key is set, empty string otherwise."""
+    return _MASKED if value else ""
 
 
 class SettingsOut(BaseModel):
@@ -54,7 +60,7 @@ def _write_yaml(data: dict) -> None:
 
 @router.get("", response_model=SettingsOut, summary="Get application settings")
 def get_current() -> SettingsOut:
-    """Returns editable settings from config/settings.yaml."""
+    """Returns editable settings. API keys are masked — set them via PATCH or env vars."""
     raw = _read_yaml()
     s = get_settings()
     return SettingsOut(
@@ -62,11 +68,11 @@ def get_current() -> SettingsOut:
         daemon_poll_interval=raw.get("daemon_poll_interval", s.daemon_poll_interval),
         daemon_paused=raw.get("daemon_paused", s.daemon_paused),
         ollama_base_url=raw.get("ollama_base_url", s.ollama_base_url),
-        anthropic_api_key=raw.get("anthropic_api_key", s.anthropic_api_key),
-        openai_api_key=raw.get("openai_api_key", s.openai_api_key),
-        google_api_key=raw.get("google_api_key", s.google_api_key),
+        anthropic_api_key=_mask(s.anthropic_api_key),
+        openai_api_key=_mask(s.openai_api_key),
+        google_api_key=_mask(s.google_api_key),
         syl_base_url=raw.get("syl_base_url", s.syl_base_url),
-        syl_api_key=raw.get("syl_api_key", s.syl_api_key),
+        syl_api_key=_mask(s.syl_api_key),
     )
 
 
@@ -88,9 +94,9 @@ def update_settings(body: SettingsPatch) -> SettingsOut:
         daemon_poll_interval=raw.get("daemon_poll_interval", 86400),
         daemon_paused=raw.get("daemon_paused", False),
         ollama_base_url=raw.get("ollama_base_url", "http://localhost:11434"),
-        anthropic_api_key=raw.get("anthropic_api_key", s.anthropic_api_key),
-        openai_api_key=raw.get("openai_api_key", s.openai_api_key),
-        google_api_key=raw.get("google_api_key", s.google_api_key),
+        anthropic_api_key=_mask(s.anthropic_api_key),
+        openai_api_key=_mask(s.openai_api_key),
+        google_api_key=_mask(s.google_api_key),
         syl_base_url=raw.get("syl_base_url", s.syl_base_url),
-        syl_api_key=raw.get("syl_api_key", s.syl_api_key),
+        syl_api_key=_mask(s.syl_api_key),
     )

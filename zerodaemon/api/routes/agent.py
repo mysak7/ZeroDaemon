@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
+import ipaddress
 import logging
+import re
 import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from langchain_core.messages import HumanMessage
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from zerodaemon.agent import daemon
 from zerodaemon.api.deps import get_registry, get_settings_dep, get_graph
@@ -19,6 +20,23 @@ from zerodaemon.models import usage as usage_module
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+_HOSTNAME_RE = re.compile(
+    r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?'
+    r'(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$'
+)
+
+
+def _validate_ip_or_hostname(value: str) -> str:
+    value = value.strip()
+    try:
+        ipaddress.ip_address(value)
+        return value
+    except ValueError:
+        pass
+    if _HOSTNAME_RE.match(value) and len(value) <= 253:
+        return value
+    raise ValueError(f"'{value}' is not a valid IP address or hostname")
 
 
 # ------------------------------------------------------------------
@@ -47,6 +65,11 @@ class DaemonStatusResponse(BaseModel):
 
 class TargetRequest(BaseModel):
     ip: str
+
+    @field_validator("ip")
+    @classmethod
+    def validate_target(cls, v: str) -> str:
+        return _validate_ip_or_hostname(v)
 
 
 # ------------------------------------------------------------------
@@ -220,13 +243,17 @@ def agent_status(registry: ModelRegistry = Depends(get_registry)) -> DaemonStatu
     )
 
 
-@router.post("/targets", summary="Add an IP to the daemon's monitoring list")
-def add_target(body: TargetRequest) -> dict:
-    daemon.add_target(body.ip)
+@router.post("/targets", summary="Add an IP/hostname to the daemon's monitoring list")
+async def add_target(body: TargetRequest) -> dict:
+    await daemon.add_target(body.ip)
     return {"message": f"Target {body.ip} added", "targets": daemon.get_state().scheduled_targets}
 
 
-@router.delete("/targets/{ip}", summary="Remove an IP from the daemon's monitoring list")
-def remove_target(ip: str) -> dict:
-    daemon.remove_target(ip)
-    return {"message": f"Target {ip} removed", "targets": daemon.get_state().scheduled_targets}
+@router.delete("/targets/{ip}", summary="Remove an IP/hostname from the daemon's monitoring list")
+async def remove_target(ip: str) -> dict:
+    try:
+        validated = _validate_ip_or_hostname(ip)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await daemon.remove_target(validated)
+    return {"message": f"Target {validated} removed", "targets": daemon.get_state().scheduled_targets}

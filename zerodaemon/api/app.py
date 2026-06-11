@@ -8,9 +8,9 @@ from contextlib import asynccontextmanager
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from zerodaemon.core.config import get_settings
@@ -27,6 +27,8 @@ from zerodaemon.api.routes import scans as scans_router
 from zerodaemon.api.routes import settings as settings_router
 
 logger = logging.getLogger(__name__)
+
+_AUTH_EXEMPT_PATHS = {"/", "/health", "/docs", "/redoc", "/openapi.json"}
 
 
 @asynccontextmanager
@@ -71,8 +73,8 @@ async def lifespan(app: FastAPI):
             app.state.checkpointer = checkpointer
             logger.info("Agent graph compiled (model: %s, persistent memory: ON)", model_id)
 
-            # Start background daemon
-            await daemon.start(registry)
+            # Start background daemon with checkpointer and db_path for persistence
+            await daemon.start(registry, checkpointer=checkpointer, db_path=settings.db_path)
             logger.info("Daemon loop started")
 
             yield
@@ -83,16 +85,29 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    settings = get_settings()
+
     app = FastAPI(
         title="ZeroDaemon",
         description="Local AI-driven DevSecOps assistant — monitoring, drift detection, threat intel",
-        version="0.1.0",
+        version="1.0.0",
         lifespan=lifespan,
     )
 
+    # Optional Bearer token auth — enabled only when ZERODAEMON_API_KEY is set
+    if settings.api_key:
+        @app.middleware("http")
+        async def api_key_middleware(request: Request, call_next):
+            path = request.url.path
+            if path not in _AUTH_EXEMPT_PATHS and not path.startswith("/static"):
+                auth = request.headers.get("Authorization", "")
+                if not auth.startswith("Bearer ") or auth[7:] != settings.api_key:
+                    return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+            return await call_next(request)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=settings.allowed_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )

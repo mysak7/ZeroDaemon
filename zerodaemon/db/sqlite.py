@@ -51,6 +51,13 @@ _CREATE_TABLES = [
         verdict        TEXT
     )
     """,
+
+    # Daemon monitoring targets — persisted across restarts
+    """
+    CREATE TABLE IF NOT EXISTS daemon_targets (
+        ip TEXT PRIMARY KEY
+    )
+    """,
 ]
 
 
