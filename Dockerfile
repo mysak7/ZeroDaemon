@@ -17,8 +17,13 @@ RUN uv pip install --system --no-cache .
 
 FROM python:3.12-slim
 
+# nmap is kept for any local use; openssh-client is required to generate the
+# worker keypair and reach workers over SSH. Cloud provisioning additionally
+# needs the gcloud CLI on the host (not bundled here — run the controller where
+# `gcloud auth login` is available, or mount the SDK in).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nmap \
+    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

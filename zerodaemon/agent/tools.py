@@ -6,6 +6,7 @@ import json
 import socket
 import sqlite3
 import uuid
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -66,10 +67,37 @@ _PORT_PRESETS: dict[str, tuple[str, str]] = {
 }
 
 
+def _parse_nmap_xml(xml_text: str, ip_address: str) -> list[dict]:
+    """Parse `nmap -oX -` output into a list of open-port dicts."""
+    open_ports: list[dict] = []
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return open_ports
+    for host in root.findall("host"):
+        for port in host.findall("./ports/port"):
+            state = port.find("state")
+            if state is None or state.get("state") != "open":
+                continue
+            svc = port.find("service")
+            open_ports.append({
+                "port": int(port.get("portid")),
+                "proto": port.get("protocol"),
+                "service": svc.get("name") if svc is not None else None,
+                "product": svc.get("product") if svc is not None else None,
+                "version": svc.get("version") if svc is not None else None,
+            })
+    return open_ports
+
+
 def scan_services(ip_address: str, ports: str = "top-100") -> str:
     """
-    Run an Nmap service scan (-sV -T4 -Pn) to discover open ports and software versions.
-    Results are persisted to the local database.
+    Run an Nmap service scan (-sV -T4 -Pn) on the active cloud worker to discover
+    open ports and software versions. Results are persisted to the local database.
+
+    Scans run remotely over SSH on the Kali worker VM — NOT on the controller. If
+    no worker is running, this returns needs_worker=true; build one first
+    (manage_infrastructure / build_worker), then retry.
 
     ports presets and estimated times (vary by network/host responsiveness):
       top-10   — most common 10 ports,   ~5–15 s    (quick sanity check)
@@ -81,39 +109,32 @@ def scan_services(ip_address: str, ports: str = "top-100") -> str:
     """
     try:
         ip_address = _resolve(ip_address)
-        import shutil
-        if not shutil.which("nmap"):
-            return json.dumps({
-                "target": ip_address,
-                "error": "nmap is not installed. Run: sudo apt install nmap  (or set ZERODAEMON_AUTO_INSTALL_DEPS=true)",
-            })
-        import nmap
-        nm = nmap.PortScanner()
         if ports in _PORT_PRESETS:
             port_arg, _ = _PORT_PRESETS[ports]
-            args = f"-sV -T4 -Pn {port_arg}"
         else:
-            args = f"-sV -T4 -Pn -p {ports}"
-        nm.scan(ip_address, arguments=args)
+            port_arg = f"-p {ports}"
 
+        from zerodaemon.workers.remote import run_in_kali, NoActiveWorkerError
+        nmap_cmd = f"nmap -sV -T4 -Pn {port_arg} -oX - {ip_address}"
+        try:
+            result = run_in_kali(nmap_cmd, timeout=2400)
+        except NoActiveWorkerError as exc:
+            return json.dumps({
+                "target": ip_address,
+                "needs_worker": True,
+                "error": str(exc),
+            })
+
+        if result.returncode != 0 and not result.stdout.strip():
+            return json.dumps({
+                "target": ip_address,
+                "error": f"Remote nmap failed: {result.stderr.strip() or 'unknown error'}",
+            })
+
+        open_ports = _parse_nmap_xml(result.stdout, ip_address)
         scan_id = str(uuid.uuid4())
-        raw = nm[ip_address].all_protocols() if ip_address in nm.all_hosts() else {}
-
-        open_ports = []
-        for proto in (raw if isinstance(raw, list) else []):
-            port_data = nm[ip_address].get(proto, {})
-            for port, info in port_data.items():
-                if info.get("state") == "open":
-                    open_ports.append({
-                        "port": port,
-                        "proto": proto,
-                        "service": info.get("name"),
-                        "product": info.get("product"),
-                        "version": info.get("version"),
-                    })
-
         summary = f"Found {len(open_ports)} open port(s) on {ip_address}"
-        raw_json = json.dumps(nm[ip_address] if ip_address in nm.all_hosts() else {})
+        raw_json = json.dumps({"open_ports": open_ports, "nmap_xml": result.stdout[:4000]})
 
         # Persist to local database (sync — tools run in executor threads)
         from zerodaemon.core.config import get_settings

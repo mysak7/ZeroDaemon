@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     db_path: str = "zerodaemon.db"
     rag_path: str = "zerodaemon_rag"
     models_config_path: str = "config/models.yaml"
+    workers_config_path: str = "config/workers.yaml"
+    # Directory holding the generated worker SSH keypair. Empty => "<db dir>/ssh".
+    ssh_key_dir: str = ""
     log_level: str = "INFO"
     daemon_poll_interval: int = 86400
     daemon_paused: bool = False
@@ -65,6 +68,13 @@ class Settings(BaseSettings):
                     object.__setattr__(self, key, value)
                 except Exception:
                     pass
+
+    def resolved_ssh_key_dir(self) -> str:
+        """Where the generated worker SSH keypair lives. Defaults to '<db dir>/ssh'."""
+        if self.ssh_key_dir:
+            return self.ssh_key_dir
+        db_dir = os.path.dirname(os.path.abspath(self.db_path))
+        return os.path.join(db_dir, "ssh")
 
 
 @lru_cache(maxsize=1)

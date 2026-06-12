@@ -58,6 +58,28 @@ _CREATE_TABLES = [
         ip TEXT PRIMARY KEY
     )
     """,
+
+    # Cloud worker VMs provisioned to run scans — survives controller restarts
+    """
+    CREATE TABLE IF NOT EXISTS workers (
+        id                 TEXT PRIMARY KEY,
+        provider           TEXT NOT NULL,
+        instance_name      TEXT NOT NULL,
+        zone               TEXT,
+        region             TEXT,
+        machine_type       TEXT,
+        public_ip          TEXT,
+        provisioning_model TEXT,
+        status             TEXT NOT NULL DEFAULT 'provisioning',
+        created_ts         TEXT NOT NULL,
+        ttl_seconds        INTEGER,
+        expires_ts         TEXT,
+        is_active          INTEGER NOT NULL DEFAULT 0,
+        label              TEXT,
+        error              TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_workers_status ON workers(status)",
 ]
 
 

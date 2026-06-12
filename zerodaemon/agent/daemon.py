@@ -65,7 +65,8 @@ async def _run_scan(registry, target: str) -> None:
         prompt = (
             f"Initiate your daily security routine for IP: {target}. "
             "1. Check the historical database for what was open previously. "
-            "2. Run a live Nmap scan. "
+            "2. Run a live Nmap scan via scan_services. If it reports needs_worker, "
+            "use manage_infrastructure to build one small spot worker, then retry. "
             "3. If there are new ports or changed versions, search for recent CVEs. "
             "Report any anomalies or drift you detect."
         )

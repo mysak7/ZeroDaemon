@@ -14,6 +14,24 @@
       height: 100dvh;
       display: flex;
       flex-direction: column;
+      position: relative;
+    }
+
+    /* Subtle CRT scanline overlay — hacker-terminal flavour, non-interactive. */
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(0, 255, 136, 0.03) 0px,
+        rgba(0, 255, 136, 0.03) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+      mix-blend-mode: screen;
     }
 
     header {
@@ -189,6 +207,74 @@
     #usage-panel .usage-model { color: #555; margin-top: 8px; padding-top: 8px; border-top: 1px solid #1a1a1a; }
     #usage-panel .usage-model-name { color: #00cc66; }
 
+    /* Workers panel */
+    #workers-toggle {
+      font-size: 0.75rem;
+      color: #555;
+      cursor: pointer;
+      white-space: nowrap;
+      user-select: none;
+      padding: 4px 8px;
+      border: 1px solid #222;
+      border-radius: 4px;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    #workers-toggle:hover, #workers-toggle.active { color: #00ff88; border-color: #00ff88; }
+    #workers-toggle .wk-count { color: #00ff88; }
+
+    #workers-panel {
+      display: none;
+      border-bottom: 1px solid #1f1f1f;
+      background: #0a0a0a;
+      padding: 12px 20px;
+      font-size: 0.8rem;
+      color: #888;
+    }
+    #workers-panel.open { display: block; }
+    #workers-panel .wk-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    #workers-panel .wk-title { color: #444; font-size: 0.72rem; letter-spacing: 1px; text-transform: uppercase; }
+    #wk-build-btn, #wk-reconcile-btn {
+      background: none; border: 1px solid #2a2a2a; color: #00cc66;
+      font-family: inherit; font-size: 0.74rem; padding: 3px 9px;
+      border-radius: 4px; cursor: pointer; margin-left: 6px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    #wk-build-btn:hover { color: #00ff88; border-color: #00ff88; }
+    #wk-reconcile-btn { color: #666; }
+    #wk-reconcile-btn:hover { color: #ccc; border-color: #555; }
+    #wk-build-btn:disabled { color: #444; border-color: #1a1a1a; cursor: default; }
+
+    .worker-row {
+      display: grid;
+      grid-template-columns: 10px 1fr auto auto auto;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 8px;
+      border: 1px solid #1a1a1a;
+      border-radius: 4px;
+      margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .worker-row .wk-dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
+    .worker-row .wk-dot.running { background: #00ff88; }
+    .worker-row .wk-dot.provisioning { background: #ffaa00; animation: pulse 0.8s infinite alternate; }
+    .worker-row .wk-dot.error { background: #ff6b6b; }
+    .worker-row .wk-ip { color: #00cc66; }
+    .worker-row .wk-meta { color: #555; font-size: 0.72rem; }
+    .worker-row .wk-spot { color: #ffaa00; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 1px; }
+    .worker-row .wk-spot.standard { color: #6688aa; }
+    .worker-row .wk-kill {
+      background: none; border: 1px solid #2a2a2a; color: #555;
+      font-size: 0.7rem; padding: 1px 7px; border-radius: 3px;
+      cursor: pointer; font-family: inherit;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .worker-row .wk-kill:hover { color: #ff6b6b; border-color: #ff6b6b; }
+    #wk-empty { color: #444; padding: 4px 0; }
+
     #cfg-toggle {
       font-size: 0.85rem;
       color: #555;
@@ -314,9 +400,21 @@
 <header>
   <div id="status-dot"></div>
   <h1>ZeroDaemon</h1>
+  <div id="workers-toggle" title="Cloud workers">workers: <span class="wk-count" id="hdr-workers">0</span></div>
   <div id="usage-toggle" title="Toggle usage stats">cost: <span class="cost" id="hdr-cost">—</span></div>
   <div id="cfg-toggle" title="Configuration">⚙</div>
 </header>
+
+<div id="workers-panel">
+  <div class="wk-head">
+    <span class="wk-title">cloud workers</span>
+    <span>
+      <button id="wk-reconcile-btn" title="Sync with cloud">↻ reconcile</button>
+      <button id="wk-build-btn">+ build worker</button>
+    </span>
+  </div>
+  <div id="workers-list"><span style="color:#333">loading…</span></div>
+</div>
 
 <div id="usage-panel">
   <div id="usage-content"><span style="color:#333">loading…</span></div>
@@ -388,11 +486,12 @@
   const WS_URL = `ws://${location.host}/agent/stream`;
 
   const TOOL_LABELS = {
-    scan_services:         'nmap',
-    check_ip_owner:        'whois',
-    search_threat_intel:   'threat intel',
-    query_historical_scans:'scan history',
-    search_knowledge_base: 'knowledge base',
+    scan_services:          'nmap (remote)',
+    check_ip_owner:         'whois',
+    search_threat_intel:    'threat intel',
+    query_historical_scans: 'scan history',
+    search_knowledge_base:  'knowledge base',
+    manage_infrastructure:  'cloud worker',
   };
 
   let ws = null;
@@ -809,6 +908,101 @@
   fetch('/health')
     .then(r => r.ok ? setStatus('online') : setStatus(''))
     .catch(() => setStatus(''));
+
+  // ── Workers panel ───────────────────────────────────────────────────────────
+  const workersToggle = document.getElementById('workers-toggle');
+  const workersPanel  = document.getElementById('workers-panel');
+  const workersList   = document.getElementById('workers-list');
+  const hdrWorkers    = document.getElementById('hdr-workers');
+  const wkBuildBtn    = document.getElementById('wk-build-btn');
+  const wkReconcileBtn = document.getElementById('wk-reconcile-btn');
+
+  function wkAge(ts) {
+    if (!ts) return '';
+    const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60);
+    return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
+  }
+
+  function renderWorkers(list) {
+    const live = list.filter(w => w.status !== 'terminated');
+    hdrWorkers.textContent = live.length;
+    if (!live.length) {
+      workersList.innerHTML = `<div id="wk-empty">no workers — build one to run scans</div>`;
+      return;
+    }
+    workersList.innerHTML = live.map(w => {
+      const spot = (w.provisioning_model || '').toUpperCase() === 'SPOT';
+      const ip = w.public_ip || '—';
+      return `<div class="worker-row">
+        <span class="wk-dot ${w.status}"></span>
+        <span class="wk-ip">${ip}</span>
+        <span class="wk-meta">${w.machine_type || '?'} · ${w.zone || '?'} · ${wkAge(w.created_ts)}</span>
+        <span class="wk-spot ${spot ? '' : 'standard'}">${spot ? 'spot' : 'on-demand'}</span>
+        <button class="wk-kill" data-id="${w.id}" title="Destroy">kill</button>
+      </div>`;
+    }).join('');
+    workersList.querySelectorAll('.wk-kill').forEach(btn => {
+      btn.addEventListener('click', () => destroyWorker(btn.dataset.id));
+    });
+  }
+
+  async function loadWorkers() {
+    try {
+      const list = await fetch('/workers').then(r => r.json());
+      renderWorkers(Array.isArray(list) ? list : []);
+    } catch (e) {
+      workersList.innerHTML = `<span style="color:#ff6b6b">failed to load workers</span>`;
+    }
+  }
+
+  async function buildWorker() {
+    wkBuildBtn.disabled = true;
+    wkBuildBtn.textContent = 'building…';
+    try {
+      const res = await fetch('/workers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        appendMsg(`worker build failed: ${err.detail || res.status}`, 'error');
+      }
+    } catch (e) {
+      appendMsg(`worker build failed: ${e}`, 'error');
+    } finally {
+      wkBuildBtn.disabled = false;
+      wkBuildBtn.textContent = '+ build worker';
+      loadWorkers();
+    }
+  }
+
+  async function destroyWorker(id) {
+    try {
+      await fetch(`/workers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    } catch (e) { /* ignore */ }
+    loadWorkers();
+  }
+
+  async function reconcileWorkers() {
+    wkReconcileBtn.disabled = true;
+    try { await fetch('/workers/reconcile', { method: 'POST' }); } catch (e) {}
+    wkReconcileBtn.disabled = false;
+    loadWorkers();
+  }
+
+  workersToggle.addEventListener('click', () => {
+    const open = workersPanel.classList.toggle('open');
+    workersToggle.classList.toggle('active', open);
+    if (open) loadWorkers();
+  });
+  wkBuildBtn.addEventListener('click', buildWorker);
+  wkReconcileBtn.addEventListener('click', reconcileWorkers);
+
+  loadWorkers();
+  setInterval(loadWorkers, 15000);
 </script>
 
 </body>

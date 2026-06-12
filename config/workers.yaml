@@ -1,0 +1,47 @@
+# ZeroDaemon cloud worker configuration.
+#
+# A worker is an ephemeral Kali VM that the agent builds in the cloud to run
+# scans from (nmap / nikto / nuclei). The controller reaches it over SSH using
+# a dedicated keypair generated at first start (never your personal key).
+#
+# All values here can be overridden per-request via POST /workers or by the
+# build_worker agent tool, within the hard limits below.
+
+active_provider: gcp
+
+# Hard guardrails — enforced in code, not in the prompt. The agent cannot
+# exceed these no matter what it's asked to do.
+limits:
+  max_workers: 2                       # refuse to create more than this many live workers
+  ttl_seconds: 86400                   # every VM self-deletes after this (max-run-duration)
+  allowed_machine_types:               # any machine type NOT in this list is rejected
+    - e2-micro
+    - e2-small
+    - e2-medium
+    - t3.small                         # aws (future)
+    - Standard_B1s                     # azure (future)
+
+# SSH source restriction. Empty => auto-detect the controller's public IP and
+# allow only that /32. Set explicitly to a CIDR to override.
+ssh_source_cidr: ""
+
+providers:
+  - name: gcp
+    enabled: true
+    project: ""                        # empty => use `gcloud config get-value project`
+    zones:                             # tried in order; spot stockout falls through
+      - europe-west1-b
+      - europe-west1-c
+      - europe-west1-d
+    machine_type: e2-small
+    image_family: debian-12
+    image_project: debian-cloud
+    boot_disk_gb: 20
+    kali_image: kalilinux/kali-rolling
+    prefer_spot: true                  # try SPOT first, fall back to on-demand on stockout
+
+  # Future providers — same shape, different CLI. Not yet implemented.
+  - name: aws
+    enabled: false
+  - name: azure
+    enabled: false

@@ -21,3 +21,8 @@ zerodaemon.db
 
 # RAG vector index (runtime)
 zerodaemon_rag/
+
+# Worker SSH keypair (generated at runtime, never commit)
+ssh/
+zerodaemon_worker
+zerodaemon_worker.pub

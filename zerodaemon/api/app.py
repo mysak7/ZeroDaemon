@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -21,10 +22,12 @@ from zerodaemon.agent import rag
 from zerodaemon.agent.graph import build_graph
 from zerodaemon.agent.mcp_tools import mcp_lifespan
 from zerodaemon.utils.deps import ensure_required
+from zerodaemon.workers import manager as worker_manager
 from zerodaemon.api.routes import models as models_router
 from zerodaemon.api.routes import agent as agent_router
 from zerodaemon.api.routes import scans as scans_router
 from zerodaemon.api.routes import settings as settings_router
+from zerodaemon.api.routes import workers as workers_router
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +63,16 @@ async def lifespan(app: FastAPI):
         logger.info("RAG knowledge base ready: %s", settings.rag_path)
     except Exception as exc:
         logger.warning("RAG init failed (%s) — search_knowledge_base will return empty results", exc)
+
+    # Initialise cloud worker manager (non-fatal — workers simply unavailable if it fails)
+    try:
+        worker_manager.init_manager(
+            settings.workers_config_path, settings.db_path, settings.resolved_ssh_key_dir()
+        )
+        recon = await asyncio.to_thread(worker_manager.get_manager().reconcile)
+        logger.info("Worker manager ready (reconcile: %s)", recon)
+    except Exception as exc:
+        logger.warning("Worker manager init failed (%s) — cloud workers unavailable", exc)
 
     # Persistent LangGraph checkpointer — keeps all conversation threads in SQLite
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -116,6 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(agent_router.router, prefix="/agent", tags=["Agent"])
     app.include_router(scans_router.router, prefix="/scans", tags=["Scans"])
     app.include_router(settings_router.router, prefix="/settings", tags=["Settings"])
+    app.include_router(workers_router.router, prefix="/workers", tags=["Workers"])
 
     _static = Path(__file__).parent / "static"
     app.mount("/static", StaticFiles(directory=_static), name="static")
