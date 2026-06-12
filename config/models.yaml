@@ -24,3 +24,15 @@ models:
   output_mtok: 0.0
   max_tokens: 8192
   note: Syl local OpenAI-compatible endpoint at http://syl:8001/v1
+- id: gemini-3-pro-preview
+  provider: vertex
+  input_mtok: 0.0
+  output_mtok: 0.0
+  max_tokens: 65536
+  note: Vertex proxy (vertex.mysak.fun) via Cloudflare Access service token
+- id: gemini-3.5-flash
+  provider: vertex
+  input_mtok: 0.0
+  output_mtok: 0.0
+  max_tokens: 65536
+  note: Vertex proxy (vertex.mysak.fun) via Cloudflare Access service token

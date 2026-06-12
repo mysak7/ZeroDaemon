@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     google_api_key: str = Field(default="", alias="GOOGLE_API_KEY")
     syl_api_key: str = Field(default="", alias="SYL_API_KEY")
     syl_base_url: str = "http://syl:8001/v1"
+    # Vertex proxy (LiteLLM) behind Cloudflare Access — see config/models.yaml
+    vertex_api_key: str = Field(default="", alias="VERTEX_API_KEY")
+    vertex_base_url: str = "https://vertex.mysak.fun/v1"
+    vertex_cf_access_client_id: str = Field(default="", alias="VERTEX_CF_ACCESS_CLIENT_ID")
+    vertex_cf_access_client_secret: str = Field(default="", alias="VERTEX_CF_ACCESS_CLIENT_SECRET")
     mcp_server_url: str = ""
     mcp_api_key: str = Field(default="", alias="MCP_API_KEY")
 

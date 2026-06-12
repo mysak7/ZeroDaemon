@@ -54,6 +54,25 @@ def build_llm(model: ModelEntry, settings) -> BaseChatModel:
             kwargs["api_key"] = settings.syl_api_key
         return ChatOpenAI(**kwargs)
 
+    if model.provider == "vertex":
+        # OpenAI-compatible LiteLLM proxy at vertex.mysak.fun, behind Cloudflare
+        # Access. Non-interactive auth via a CF Access service token (machine
+        # identity) — not the interactive Entra ID login.
+        from langchain_openai import ChatOpenAI
+        kwargs = dict(
+            model=model.id,
+            max_tokens=model.max_tokens,
+            base_url=settings.vertex_base_url,
+        )
+        if settings.vertex_api_key:
+            kwargs["api_key"] = settings.vertex_api_key
+        if settings.vertex_cf_access_client_id and settings.vertex_cf_access_client_secret:
+            kwargs["default_headers"] = {
+                "CF-Access-Client-Id": settings.vertex_cf_access_client_id,
+                "CF-Access-Client-Secret": settings.vertex_cf_access_client_secret,
+            }
+        return ChatOpenAI(**kwargs)
+
     if model.provider == "google":
         from langchain_google_genai import ChatGoogleGenerativeAI
         kwargs = dict(model=model.id)
