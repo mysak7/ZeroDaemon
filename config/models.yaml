@@ -1,4 +1,4 @@
-active: claude-fable-5
+active: gemini-3.5-flash
 models:
 - id: claude-fable-5
   provider: anthropic
